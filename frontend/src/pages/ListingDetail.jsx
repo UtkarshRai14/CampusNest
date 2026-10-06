@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
+import { CONDITION_LABELS } from '../constants'
 
 const typeColors = {
   sell:   { bg: '#E8FBF8', color: '#00A896' },
@@ -39,8 +40,6 @@ const quickMessages = {
   ],
 }
 
-const conditionLabels = ['', 'Poor', 'Fair', 'Good', 'Very Good', 'Like New']
-
 export default function ListingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -56,9 +55,12 @@ export default function ListingDetail() {
   useEffect(() => {
     API.get(`/listings/${id}`)
       .then(r => setListing(r.data))
-      .catch(() => { toast.error('Listing not found'); navigate('/listings') })
+      .catch(err => {
+        toast.error(err.response?.status === 404 ? 'Listing not found' : 'Unable to load listing. Please try again.')
+        navigate('/listings')
+      })
       .finally(() => setLoading(false))
-  }, [id])
+  }, [id, isAuthenticated])
 
   const handleQuickMessage = (template) => {
     setMessage(template.text)
@@ -110,18 +112,16 @@ export default function ListingDetail() {
     <div style={{ minHeight: '100vh', background: '#F5FFFE', padding: window.innerWidth < 768 ? '16px' : '32px 24px' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
-        
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28, fontSize: 14, color: '#7A9BA8' }}>
           <Link to="/listings" style={{ color: '#00A896', textDecoration: 'none', fontWeight: 600 }}>← Browse</Link>
           <span>/</span><span>{listing.category}</span><span>/</span>
-          <span style={{ color: '#0D2B35', fontWeight: 600 }}>{listing.title?.substring(0, 30)}...</span>
+          <span style={{ color: '#0D2B35', fontWeight: 600 }}>{listing.title?.length > 30 ? `${listing.title.substring(0, 30)}...` : listing.title}</span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth < 768 ? '1fr' : '1fr 400px', gap: 28, alignItems: 'start' }}>
 
-          
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-            
+
             <div style={{
               borderRadius: 20, overflow: 'hidden', marginBottom: 24,
               border: '1px solid #D0F5F0', background: '#F8FFFE',
@@ -136,7 +136,6 @@ export default function ListingDetail() {
               )}
             </div>
 
-            
             <div style={{ background: '#fff', borderRadius: 18, padding: 28, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.06)' }}>
               <h2 style={{ fontWeight: 800, color: '#0D2B35', marginBottom: 14, fontSize: 18 }}>About this item</h2>
               <p style={{ color: '#4A6572', lineHeight: 1.8, fontSize: 15 }}>{listing.description || 'No description provided.'}</p>
@@ -151,14 +150,12 @@ export default function ListingDetail() {
             </div>
           </motion.div>
 
-          
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
             style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-            
             <div style={{ background: '#fff', borderRadius: 20, padding: 28, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.08)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                
+
                 {listing.verification_label && (
                   <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -169,13 +166,12 @@ export default function ListingDetail() {
                     border: `1px solid ${listing.verification_color || '#00A896'}33`,
                     width: 'fit-content',
                   }}>
-                    <span style={{ fontSize: 16 }}>
-                      {listing.ai_verified ? '🤖' : '⚠️'}
-                    </span>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 800 }}>{listing.verification_label}</div>
                       <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 500 }}>
-                        {((1 - (listing.spam_score || 0)) * 100).toFixed(0)}% Safety Score · Powered by ML
+                        {listing.spam_checked
+                          ? `Spam risk score: ${(listing.spam_score * 100).toFixed(0)}% (automatic check)`
+                          : 'This listing has not been spam-checked'}
                       </div>
                     </div>
                   </div>
@@ -194,8 +190,8 @@ export default function ListingDetail() {
               </div>
               {[
                 ['📦 Category', listing.category],
-                ['⭐ Condition', `${listing.condition}/5 — ${conditionLabels[listing.condition] || ''}`],
-                ['🎓 Department', listing.department_tag || 'IIIT Sonepat'],
+                ['⭐ Condition', `${listing.condition}/5 — ${CONDITION_LABELS[listing.condition] || ''}`],
+                ['🎓 Department', listing.department_tag || '—'],
               ].map(([label, value]) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F0F8F6' }}>
                   <span style={{ color: '#7A9BA8', fontSize: 14 }}>{label}</span>
@@ -204,7 +200,6 @@ export default function ListingDetail() {
               ))}
             </div>
 
-            
             <div style={{ background: '#fff', borderRadius: 20, padding: 24, border: '1px solid #D0F5F0' }}>
               <h3 style={{ fontWeight: 700, color: '#0D2B35', marginBottom: 16, fontSize: 15 }}>👤 Seller</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -212,28 +207,40 @@ export default function ListingDetail() {
                   {listing.seller_name?.[0]?.toUpperCase() || '?'}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, color: '#0D2B35', fontSize: 15 }}>{listing.seller_name || 'IIIT Sonepat Student'}</div>
-                  <div style={{ fontSize: 13, color: '#7A9BA8', marginTop: 2 }}>{listing.seller_school || 'IIIT Sonepat'}</div>
+                  <div style={{ fontWeight: 700, color: '#0D2B35', fontSize: 15 }}>{listing.seller_name || 'Student'}</div>
+                  <div style={{ fontSize: 13, color: '#7A9BA8', marginTop: 2 }}>{listing.seller_school}</div>
                   <div style={{ fontSize: 12, color: '#00A896', marginTop: 2 }}>{listing.seller_department}</div>
                 </div>
               </div>
 
-              
               <AnimatePresence>
                 {showContact && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                     style={{ marginTop: 16, padding: 16, background: '#F8FFFE', borderRadius: 12, border: '1px solid #D0F5F0' }}>
                     <p style={{ fontSize: 13, color: '#4A6572', marginBottom: 8, fontWeight: 600 }}>📧 Contact Seller Directly:</p>
-                    <a href={`mailto:${listing.seller_email || ''}`} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#00A896', fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 8 }}>
-                      ✉️ {listing.seller_email || 'Login to see email'}
-                    </a>
-                    <p style={{ fontSize: 12, color: '#A0BCBB' }}>Mention the listing title in your email</p>
+                    {isAuthenticated && listing.seller_email ? (
+                      <>
+                        <a href={`mailto:${listing.seller_email}`} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#00A896', fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 8 }}>
+                          ✉️ {listing.seller_email}
+                        </a>
+                        {listing.seller_whatsapp && (
+                          <a href={`https://wa.me/91${listing.seller_whatsapp.replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#00A896', fontWeight: 700, fontSize: 14, textDecoration: 'none', marginBottom: 8 }}>
+                            📱 WhatsApp: +91 {listing.seller_whatsapp}
+                          </a>
+                        )}
+                        <p style={{ fontSize: 12, color: '#A0BCBB' }}>Mention the listing title when you contact them</p>
+                      </>
+                    ) : (
+                      <p style={{ fontSize: 13, color: '#CC8800', fontWeight: 600 }}>
+                        <Link to="/login" style={{ color: '#00A896' }}>Login</Link> to see the seller's contact details
+                      </p>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
-            
             {isOwner ? (
               <div style={{ background: '#F0FFFE', borderRadius: 16, padding: 20, border: '1px solid #B2EFE8', textAlign: 'center' }}>
                 <p style={{ color: '#00A896', fontWeight: 700, marginBottom: 12 }}>✅ This is your listing</p>
@@ -245,7 +252,6 @@ export default function ListingDetail() {
               <div style={{ background: '#fff', borderRadius: 20, padding: 24, border: '1px solid #D0F5F0' }}>
                 <h3 style={{ fontWeight: 800, color: '#0D2B35', marginBottom: 16, fontSize: 16 }}>💬 Contact Seller</h3>
 
-                
                 <div style={{ marginBottom: 16 }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: '#A0BCBB', letterSpacing: 0.5, marginBottom: 10 }}>
                     QUICK QUERIES
@@ -271,7 +277,6 @@ export default function ListingDetail() {
                       </motion.button>
                     ))}
 
-                    
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       onClick={() => { setShowContact(!showContact); setMessage('') ; setActiveQuick(null) }}
@@ -289,7 +294,6 @@ export default function ListingDetail() {
                   </div>
                 </div>
 
-                
                 {!showContact && (
                   <>
                     {!isAuthenticated && (

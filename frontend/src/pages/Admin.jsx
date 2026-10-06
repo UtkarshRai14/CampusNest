@@ -5,7 +5,12 @@ import toast from 'react-hot-toast'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
 
-const ADMIN_EMAILS = ['admin@campusnest.com']
+const typeColors = {
+  sell:   { bg: '#E8FBF8', color: '#00A896' },
+  rent:   { bg: '#EBF5FF', color: '#0080CC' },
+  borrow: { bg: '#FFF8E8', color: '#CC8800' },
+  swap:   { bg: '#F5EEFF', color: '#7B2FBE' },
+}
 
 export default function Admin() {
   const { user, isAuthenticated } = useAuthStore()
@@ -17,17 +22,20 @@ export default function Admin() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
+  // This check only decides what to show. The API itself rejects non-admins with a 403.
   useEffect(() => {
-    if (!isAuthenticated || !ADMIN_EMAILS.includes(user?.email)) {
+    if (!isAuthenticated) { navigate('/login'); return }
+    if (user?.is_admin === undefined) return // the app is still refreshing the user from the server
+    if (!user.is_admin) {
       toast.error('Admin access only!')
       navigate('/')
       return
     }
     fetchAll()
-  }, [])
+  }, [isAuthenticated, user?.is_admin])
 
-  const fetchAll = async () => {
-    setLoading(true)
+  const fetchAll = async (silent = false) => {
+    if (!silent) setLoading(true)
     try {
       const [s, u, l] = await Promise.all([
         API.get('/admin/stats'),
@@ -37,7 +45,10 @@ export default function Admin() {
       setStats(s.data)
       setUsers(u.data)
       setListings(l.data)
-    } catch { toast.error('Failed to load admin data') }
+    } catch (err) {
+      if (err.response?.status === 403) { toast.error('Admin access only!'); navigate('/') }
+      else toast.error('Failed to load admin data')
+    }
     finally { setLoading(false) }
   }
 
@@ -45,18 +56,18 @@ export default function Admin() {
     if (!window.confirm('Delete this user and all their data?')) return
     try {
       await API.delete(`/admin/users/${id}`)
-      setUsers(prev => prev.filter(u => u.id !== id))
       toast.success('User deleted')
-    } catch { toast.error('Failed') }
+      fetchAll(true)
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to delete user') }
   }
 
   const deleteListing = async (id) => {
     if (!window.confirm('Delete this listing?')) return
     try {
       await API.delete(`/admin/listings/${id}`)
-      setListings(prev => prev.filter(l => l.id !== id))
       toast.success('Listing deleted')
-    } catch { toast.error('Failed') }
+      fetchAll(true)
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to delete listing') }
   }
 
   const filteredUsers = users.filter(u =>
@@ -76,7 +87,6 @@ export default function Admin() {
     <div style={{ minHeight: '100vh', background: '#F5FFFE', padding: '32px 24px' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
 
-        
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
           style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
           <div>
@@ -85,14 +95,13 @@ export default function Admin() {
             </h1>
             <p style={{ color: '#7A9BA8' }}>Welcome back, {user?.name} · Full platform control</p>
           </div>
-          <button onClick={fetchAll} style={{
+          <button onClick={() => fetchAll()} style={{
             padding: '10px 22px', borderRadius: 10, border: 'none',
             background: 'linear-gradient(135deg, #00C9B1, #00A896)',
             color: '#fff', fontWeight: 700, cursor: 'pointer',
           }}>🔄 Refresh</button>
         </motion.div>
 
-        
         {stats && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px,1fr))', gap: 16, marginBottom: 32 }}>
             {[
@@ -113,7 +122,6 @@ export default function Admin() {
           </div>
         )}
 
-        
         <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#fff', borderRadius: 12, padding: 6, border: '1px solid #D0F5F0', width: 'fit-content' }}>
           {[['stats', '📊 Overview'], ['users', '👥 Users'], ['listings', '📦 Listings']].map(([key, label]) => (
             <button key={key} onClick={() => { setTab(key); setSearch('') }} style={{
@@ -125,7 +133,6 @@ export default function Admin() {
           ))}
         </div>
 
-        
         {tab !== 'stats' && (
           <input type="text" placeholder={`🔍 Search ${tab}...`}
             value={search} onChange={e => setSearch(e.target.value)}
@@ -143,7 +150,7 @@ export default function Admin() {
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A9BA8' }}>Loading...</div>
         ) : (
           <>
-            
+
             {tab === 'users' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 style={{ background: '#fff', borderRadius: 18, border: '1px solid #D0F5F0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
@@ -170,11 +177,15 @@ export default function Admin() {
                           <td style={tdStyle}><span style={{ background: '#E8FBF8', color: '#00A896', padding: '2px 10px', borderRadius: 20, fontWeight: 700 }}>{u.listings_count}</span></td>
                           <td style={{ ...tdStyle, fontSize: 12, color: '#7A9BA8' }}>{u.created_at?.split('T')[0]}</td>
                           <td style={tdStyle}>
-                            <button onClick={() => deleteUser(u.id)} style={{
-                              padding: '5px 14px', borderRadius: 8,
-                              border: '1px solid #FFD0D0', background: '#FFF5F5',
-                              color: '#E05555', fontWeight: 600, fontSize: 12, cursor: 'pointer',
-                            }}>Delete</button>
+                            {u.id === user?.id ? (
+                              <span style={{ fontSize: 12, color: '#7A9BA8', fontWeight: 600 }}>You (admin)</span>
+                            ) : (
+                              <button onClick={() => deleteUser(u.id)} style={{
+                                padding: '5px 14px', borderRadius: 8,
+                                border: '1px solid #FFD0D0', background: '#FFF5F5',
+                                color: '#E05555', fontWeight: 600, fontSize: 12, cursor: 'pointer',
+                              }}>Delete</button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -190,7 +201,6 @@ export default function Admin() {
               </motion.div>
             )}
 
-            
             {tab === 'listings' && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 style={{ background: '#fff', borderRadius: 18, border: '1px solid #D0F5F0', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
@@ -198,7 +208,7 @@ export default function Admin() {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ background: '#F8FFFE' }}>
                       <tr>
-                        {['ID', 'Title', 'Category', 'Type', 'Price', 'Condition', 'Spam?', 'Seller ID', 'Posted', 'Action'].map(h => (
+                        {['ID', 'Title', 'Category', 'Type', 'Price', 'Condition', 'Spam flag', 'Seller ID', 'Posted', 'Action'].map(h => (
                           <th key={h} style={thStyle}>{h}</th>
                         ))}
                       </tr>
@@ -214,16 +224,16 @@ export default function Admin() {
                           <td style={tdStyle}>
                             <span style={{
                               padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11,
-                              background: l.listing_type === 'sell' ? '#E8FBF8' : l.listing_type === 'rent' ? '#EBF5FF' : '#FFF8E8',
-                              color: l.listing_type === 'sell' ? '#00A896' : l.listing_type === 'rent' ? '#0080CC' : '#CC8800',
+                              background: (typeColors[l.listing_type] || typeColors.sell).bg,
+                              color: (typeColors[l.listing_type] || typeColors.sell).color,
                             }}>{l.listing_type?.toUpperCase()}</span>
                           </td>
                           <td style={{ ...tdStyle, fontWeight: 700, color: '#00A896' }}>₹{l.price}</td>
                           <td style={tdStyle}>⭐ {l.condition}/5</td>
                           <td style={tdStyle}>
-                            {l.is_spam
-                              ? <span style={{ background: '#FFF0F0', color: '#E05555', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>⚠️ SPAM</span>
-                              : <span style={{ background: '#E8FBF8', color: '#00A896', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>✅ OK</span>
+                            {l.is_flagged
+                              ? <span style={{ background: '#FFF0F0', color: '#E05555', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>⚠️ Flagged</span>
+                              : <span style={{ background: '#F0F4F5', color: '#7A9BA8', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>Not flagged</span>
                             }
                           </td>
                           <td style={tdStyle}>#{l.seller_id}</td>
@@ -249,7 +259,6 @@ export default function Admin() {
               </motion.div>
             )}
 
-            
             {tab === 'stats' && stats && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 style={{ background: '#fff', borderRadius: 18, padding: 32, border: '1px solid #D0F5F0' }}>

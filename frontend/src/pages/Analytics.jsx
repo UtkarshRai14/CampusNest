@@ -3,13 +3,7 @@ import { motion } from 'framer-motion'
 import { Link, useNavigate } from 'react-router-dom'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
-
-const categoryEmojis = {
-  Books: '📚', Laptop: '💻', Calculator: '🔢',
-  'Drawing Instruments': '📐', Stationery: '✏️',
-  Fan: '🌀', Cooler: '❄️', 'Hostel Items': '🏠',
-  Electronics: '⚡', Other: '📦',
-}
+import { CATEGORIES } from '../constants'
 
 function StatCard({ icon, label, value, sub, color, delay }) {
   return (
@@ -48,6 +42,7 @@ export default function Analytics() {
   const [recommendations, setRecommendations] = useState([])
   const [chart, setChart] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -55,6 +50,7 @@ export default function Analytics() {
 
   const fetchData = async () => {
     setLoading(true)
+    setError(false)
     try {
       const [trendRes, summaryRes] = await Promise.all([
         API.get('/analytics/trending'),
@@ -64,17 +60,22 @@ export default function Analytics() {
       setTrending(Array.isArray(trendData) ? trendData : [])
       setChart(trendRes.data?.chart || null)
       setSummary(summaryRes.data || null)
-
-      if (isAuthenticated && user?.id) {
-        const recRes = await API.get(`/analytics/recommendations/${user.id}`)
-        const recs = recRes.data?.recommendations || recRes.data || []
-        setRecommendations(Array.isArray(recs) ? recs : [])
-      }
     } catch (e) {
       console.error('Analytics error:', e)
-    } finally {
+      setError(true)
       setLoading(false)
+      return
     }
+
+    // Recommendations are optional: if they fail, the rest of the page is still shown.
+    if (isAuthenticated && user?.id) {
+      try {
+        const recRes = await API.get(`/analytics/recommendations/${user.id}`)
+        const recs = recRes.data?.recommendations || []
+        setRecommendations(Array.isArray(recs) ? recs : [])
+      } catch { setRecommendations([]) }
+    }
+    setLoading(false)
   }
 
   const maxCount = Math.max(...trending.map(t => t.count || 0), 1)
@@ -83,48 +84,50 @@ export default function Analytics() {
     <div style={{ minHeight: '100vh', background: '#F5FFFE', padding: '20px 24px' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
-        
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}
           style={{ marginBottom: 20 }}>
           <h1 style={{ fontSize: 30, fontWeight: 900, color: '#0D2B35', marginBottom: 6 }}>
             📊 Analytics Dashboard
           </h1>
           <p style={{ color: '#7A9BA8', fontSize: 15 }}>
-            Live campus marketplace insights · Powered by ML
+            Live campus marketplace insights
           </p>
         </motion.div>
 
         {loading ? (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 20 }}>
             {[...Array(4)].map((_, i) => (
-              <div key={i} style={{ background: '#fff', borderRadius: 20, padding: 24, border: '1px solid #D0F5F0', height: 160,
+              <div key={i} style={{ borderRadius: 20, padding: 24, border: '1px solid #D0F5F0', height: 160,
                 background: 'linear-gradient(90deg, #f0fffe 25%, #e8fdfb 50%, #f0fffe 75%)',
                 backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite',
               }} />
             ))}
           </div>
+        ) : error ? (
+          <div style={{ textAlign: 'center', padding: '80px 40px', background: '#fff', borderRadius: 24, border: '1px dashed #F5B5B5' }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>⚠️</div>
+            <h3 style={{ color: '#0D2B35', fontWeight: 800, fontSize: 20, marginBottom: 16 }}>Unable to load analytics. Please try again.</h3>
+            <button onClick={fetchData} style={{ padding: '12px 28px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #00C9B1, #00A896)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Try again</button>
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
 
-            
             {summary && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 20 }}>
                 <StatCard icon="📦" label="Total Listings" value={summary.total_listings} sub="Active on platform" color="#E8FBF8" delay={0} />
-                <StatCard icon="👥" label="Total Users" value={summary.total_users} sub="IIIT Sonepat students" color="#EBF5FF" delay={0.1} />
+                <StatCard icon="👥" label="Total Users" value={summary.total_users} sub="Registered on platform" color="#EBF5FF" delay={0.1} />
                 <StatCard icon="🏷️" label="Categories" value={summary.total_categories} sub="Item types available" color="#FFF8E8" delay={0.2} />
                 <StatCard icon="💰" label="Avg Price" value={`₹${summary.average_price}`} sub="Across all listings" color="#F5EEFF" delay={0.3} />
               </div>
             )}
 
-            
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 20 }}>
-              <StatCard icon="🤖" label="Price AI" value="96.76%" sub="Random Forest R² accuracy" color="#E8FBF8" delay={0.4} />
-              <StatCard icon="🛡️" label="Spam Detection" value="100%" sub="TF-IDF + Logistic Regression" color="#EBF5FF" delay={0.5} />
-              <StatCard icon="🎯" label="Recommender" value="Active" sub="Collaborative filtering" color="#FFF8E8" delay={0.6} />
+              <StatCard icon="📈" label="Price Estimate" value="Random Forest" sub="ML model trained on synthetic data" color="#E8FBF8" delay={0.4} />
+              <StatCard icon="🛡️" label="Spam Check" value="Logistic Regression" sub="TF-IDF text classifier" color="#EBF5FF" delay={0.5} />
+              <StatCard icon="🎯" label="Recommendations" value="Rule-based" sub="Department, semester and recency" color="#FFF8E8" delay={0.6} />
               <StatCard icon="🎓" label="Programs" value="4" sub="CSE, CSE-DS&A, IT & PhD" color="#F5EEFF" delay={0.7} />
             </div>
 
-            
             {chart && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
                 style={{ background: '#fff', borderRadius: 20, padding: 20, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
@@ -136,7 +139,6 @@ export default function Analytics() {
               </motion.div>
             )}
 
-            
             {trending.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
                 style={{ background: '#fff', borderRadius: 20, padding: 20, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
@@ -151,7 +153,7 @@ export default function Analytics() {
                       style={{ display: 'flex', alignItems: 'center', gap: 14 }}
                     >
                       <div style={{ width: 32, textAlign: 'center', fontSize: 20, flexShrink: 0 }}>
-                        {categoryEmojis[item.category] || '📦'}
+                        {CATEGORIES.find(c => c.name === item.category)?.icon || '📦'}
                       </div>
                       <div style={{ width: 160, fontSize: 14, fontWeight: 600, color: '#0D2B35', flexShrink: 0 }}>
                         {item.category}
@@ -179,7 +181,6 @@ export default function Analytics() {
               </motion.div>
             )}
 
-            
             {isAuthenticated && recommendations.length > 0 && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}
                 style={{ background: '#fff', borderRadius: 20, padding: 20, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
@@ -187,7 +188,7 @@ export default function Analytics() {
                   ✨ Recommended for You
                 </h2>
                 <p style={{ color: '#7A9BA8', fontSize: 14, marginBottom: 24 }}>
-                  Based on your department and semester · ML powered
+                  Based on your department, semester and how recent the listing is
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))', gap: 16 }}>
                   {recommendations.map((item, i) => (
@@ -213,7 +214,6 @@ export default function Analytics() {
               </motion.div>
             )}
 
-            
             {!isAuthenticated && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 style={{
@@ -222,7 +222,7 @@ export default function Analytics() {
                 }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>✨</div>
                 <h3 style={{ fontWeight: 900, fontSize: 20, marginBottom: 8 }}>Get Personalized Recommendations</h3>
-                <p style={{ opacity: 0.85, marginBottom: 20 }}>Login to see AI-powered listing recommendations based on your department and semester</p>
+                <p style={{ opacity: 0.85, marginBottom: 20 }}>Login to see listing recommendations based on your department and semester</p>
                 <Link to="/login" style={{
                   display: 'inline-block', padding: '12px 28px', borderRadius: 10,
                   background: '#fff', color: '#00A896', fontWeight: 800,

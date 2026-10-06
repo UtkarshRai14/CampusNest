@@ -1,20 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import API from '../api/axios'
+import { CATEGORIES, CONDITION_LABELS } from '../constants'
 
-const categories = [
-  { name: 'All', icon: '🏬' },
-  { name: 'Books', icon: '📚' },
-  { name: 'Laptop', icon: '💻' },
-  { name: 'Calculator', icon: '🔢' },
-  { name: 'Drawing Instruments', icon: '📐' },
-  { name: 'Stationery', icon: '✏️' },
-  { name: 'Fan', icon: '🌀' },
-  { name: 'Cooler', icon: '❄️' },
-  { name: 'Hostel Items', icon: '🏠' },
-  { name: 'Electronics', icon: '⚡' },
-]
+const categories = [{ name: 'All', icon: '🏬' }, ...CATEGORIES]
 
 const listingTypes = ['All Types', 'sell', 'rent', 'borrow', 'swap']
 
@@ -24,7 +14,6 @@ const typeConfig = {
   borrow: { bg: '#FFF8E8', color: '#CC8800', label: '🤝 Borrow', border: '#F5DFA0' },
   swap:   { bg: '#F5EEFF', color: '#7B2FBE', label: '🔄 Swap',   border: '#D4B8F5' },
 }
-
 
 function SkeletonCard() {
   return (
@@ -45,7 +34,6 @@ function SkeletonCard() {
     </div>
   )
 }
-
 
 function ListingCard({ item, index }) {
   const [imgError, setImgError] = useState(false)
@@ -71,7 +59,7 @@ function ListingCard({ item, index }) {
           onMouseEnter={e => e.currentTarget.style.boxShadow = '0 16px 40px rgba(0,201,177,0.18)'}
           onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 16px rgba(0,201,177,0.06)'}
         >
-          
+
           <div style={{
             height: 200, background: '#F8FFFE',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -105,7 +93,6 @@ function ListingCard({ item, index }) {
               </div>
             )}
 
-            
             <div style={{
               position: 'absolute', top: 10, left: 10,
               background: tc.bg, color: tc.color,
@@ -117,7 +104,6 @@ function ListingCard({ item, index }) {
               {tc.label}
             </div>
 
-            
             <div style={{
               position: 'absolute', top: 10, right: 10,
               background: 'rgba(255,255,255,0.92)',
@@ -130,7 +116,6 @@ function ListingCard({ item, index }) {
             </div>
           </div>
 
-          
           <div style={{ padding: '16px 18px 18px' }}>
             <h3 style={{
               fontWeight: 700, color: '#0D2B35', fontSize: 14,
@@ -155,7 +140,6 @@ function ListingCard({ item, index }) {
                 </div>
               </div>
 
-              
               <div style={{
                 width: 36, height: 36, borderRadius: '50%',
                 background: 'linear-gradient(135deg, #00C9B1, #00A896)',
@@ -164,7 +148,6 @@ function ListingCard({ item, index }) {
               }}>→</div>
             </div>
 
-            
             {item.seller_name && (
               <div style={{
                 marginTop: 12, paddingTop: 12,
@@ -195,6 +178,8 @@ export default function Listings() {
   const [searchParams] = useSearchParams()
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [activeCategory, setActiveCategory] = useState(searchParams.get('category') || 'All')
   const [activeType, setActiveType] = useState('All Types')
   const [minPrice, setMinPrice] = useState('')
@@ -206,7 +191,6 @@ export default function Listings() {
   const [sortBy, setSortBy] = useState('newest')
   const searchTimer = useRef(null)
 
-  
   const handleSearchInput = (val) => {
     setSearchInput(val)
     clearTimeout(searchTimer.current)
@@ -214,7 +198,9 @@ export default function Listings() {
   }
 
   useEffect(() => {
+    let ignore = false
     setLoading(true)
+    setError(false)
     const params = {}
     if (activeCategory !== 'All') params.category = activeCategory
     if (activeType !== 'All Types') params.listing_type = activeType
@@ -225,16 +211,19 @@ export default function Listings() {
 
     API.get('/listings/', { params })
       .then(r => {
+        if (ignore) return
         let data = Array.isArray(r.data) ? r.data : []
-        
         if (sortBy === 'price_low') data = [...data].sort((a, b) => a.price - b.price)
         if (sortBy === 'price_high') data = [...data].sort((a, b) => b.price - a.price)
         if (sortBy === 'condition') data = [...data].sort((a, b) => b.condition - a.condition)
         setListings(data)
       })
-      .catch(() => setListings([]))
-      .finally(() => setLoading(false))
-  }, [activeCategory, activeType, minPrice, maxPrice, minCondition, search, sortBy])
+      .catch(() => { if (!ignore) { setListings([]); setError(true) } })
+      .finally(() => { if (!ignore) setLoading(false) })
+
+    // A newer request supersedes this one, so a slow older response cannot overwrite it.
+    return () => { ignore = true }
+  }, [activeCategory, activeType, minPrice, maxPrice, minCondition, search, sortBy, reloadKey])
 
   const clearFilters = () => {
     setActiveCategory('All')
@@ -257,23 +246,18 @@ export default function Listings() {
     <div style={{ minHeight: '100vh', background: '#F5FFFE' }}>
 
       <style>{`
-        @keyframes shimmer {
-          0% { background-position: -200% 0; }
-          100% { background-position: 200% 0; }
-        }
         .cat-pill:hover {
           background: rgba(0,201,177,0.1) !important;
           color: #00A896 !important;
         }
       `}</style>
 
-      
       <div style={{
         background: '#fff', borderBottom: '1px solid #D0F5F0',
         padding: '14px 32px',
         display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
       }}>
-        
+
         <div style={{ flex: 1, minWidth: 240, position: 'relative' }}>
           <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 16 }}>🔍</span>
           <input
@@ -298,7 +282,6 @@ export default function Listings() {
           )}
         </div>
 
-        
         <select value={sortBy} onChange={e => setSortBy(e.target.value)} style={{
           padding: '10px 14px', borderRadius: 10, border: '1.5px solid #D0ECE8',
           background: '#fff', color: '#0D2B35', fontSize: 14, cursor: 'pointer', outline: 'none',
@@ -309,7 +292,6 @@ export default function Listings() {
           <option value="condition">⭐ Best Condition</option>
         </select>
 
-        
         <div style={{ display: 'flex', gap: 4, background: '#F0FFFE', borderRadius: 10, padding: 4, border: '1px solid #D0F5F0' }}>
           {[['grid', '⊞'], ['list', '☰']].map(([mode, icon]) => (
             <button key={mode} onClick={() => setViewMode(mode)} style={{
@@ -321,13 +303,11 @@ export default function Listings() {
           ))}
         </div>
 
-        
         <div style={{ color: '#7A9BA8', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
-          {loading ? '...' : `${listings.length} listing${listings.length !== 1 ? 's' : ''}`}
+          {loading ? '...' : error ? '—' : `${listings.length} listing${listings.length !== 1 ? 's' : ''}`}
         </div>
       </div>
 
-      
       <div style={{
         background: '#fff', borderBottom: '1px solid #D0F5F0',
         padding: '0 32px', display: 'flex', gap: 4,
@@ -349,7 +329,6 @@ export default function Listings() {
 
       <div style={{ display: 'flex', maxWidth: 1400, margin: '0 auto', padding: '24px 16px', gap: 24, flexWrap: 'wrap' }}>
 
-        
         <motion.aside
           initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
           className='listings-sidebar' style={{
@@ -371,7 +350,6 @@ export default function Listings() {
             )}
           </div>
 
-          
           <div style={{ marginBottom: 24 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: '#A0BCBB', letterSpacing: 1, marginBottom: 10 }}>LISTING TYPE</p>
             {listingTypes.map(t => (
@@ -392,7 +370,6 @@ export default function Listings() {
             ))}
           </div>
 
-          
           <div style={{ marginBottom: 24 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: '#A0BCBB', letterSpacing: 1, marginBottom: 10 }}>PRICE RANGE (₹)</p>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -411,7 +388,6 @@ export default function Listings() {
             </div>
           </div>
 
-          
           <div style={{ marginBottom: 24 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: '#A0BCBB', letterSpacing: 1, marginBottom: 10 }}>MIN CONDITION</p>
             <div style={{ display: 'flex', gap: 5 }}>
@@ -427,7 +403,7 @@ export default function Listings() {
               ))}
             </div>
             <p style={{ fontSize: 11, color: '#A0BCBB', marginTop: 6, textAlign: 'center' }}>
-              {['', 'Poor', 'Fair', 'Good', 'Very Good', 'Like New'][minCondition] || '1=Poor · 5=Like New'}
+              {CONDITION_LABELS[minCondition] || '1=Poor · 5=Like New'}
             </p>
           </div>
 
@@ -439,39 +415,56 @@ export default function Listings() {
           }}>Reset All Filters</button>
         </motion.aside>
 
-        
         <div style={{ flex: 1, minWidth: 0 }}>
 
-          
           {activeFiltersCount > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
               {activeCategory !== 'All' && (
-                <span style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8' }}>
+                <span onClick={() => setActiveCategory('All')} style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8', cursor: 'pointer' }}>
                   {activeCategory} ✕
                 </span>
               )}
               {activeType !== 'All Types' && (
-                <span style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8' }}>
+                <span onClick={() => setActiveType('All Types')} style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8', cursor: 'pointer' }}>
                   {activeType} ✕
                 </span>
               )}
               {minCondition && (
-                <span style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8' }}>
+                <span onClick={() => setMinCondition(null)} style={{ background: '#E8FBF8', color: '#00A896', padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 600, border: '1px solid #B2EFE8', cursor: 'pointer' }}>
                   Condition ≥ {minCondition} ✕
                 </span>
               )}
             </div>
           )}
 
-          
           {loading && (
             <div style={{ display: 'grid', gridTemplateColumns: viewMode === 'grid' ? 'repeat(auto-fill, minmax(220px, 1fr))' : '1fr', gap: 18 }}>
               {[...Array(8)].map((_, i) => <SkeletonCard key={i} />)}
             </div>
           )}
 
-          
-          {!loading && listings.length === 0 && (
+          {!loading && error && (
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+              style={{
+                textAlign: 'center', padding: '80px 40px',
+                background: '#fff', borderRadius: 24,
+                border: '1px dashed #F5B5B5',
+              }}>
+              <div style={{ fontSize: 64, marginBottom: 16 }}>⚠️</div>
+              <h3 style={{ color: '#0D2B35', fontWeight: 800, fontSize: 20, marginBottom: 8 }}>Unable to load listings. Please try again.</h3>
+              <p style={{ color: '#7A9BA8', marginBottom: 28, fontSize: 15 }}>
+                The server could not be reached. Your filters are unchanged.
+              </p>
+              <button onClick={() => setReloadKey(k => k + 1)} style={{
+                padding: '11px 24px', borderRadius: 10, border: 'none',
+                background: 'linear-gradient(135deg, #00C9B1, #00A896)',
+                color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14,
+                boxShadow: '0 4px 15px rgba(0,201,177,0.3)',
+              }}>Try again</button>
+            </motion.div>
+          )}
+
+          {!loading && !error && listings.length === 0 && (
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
               style={{
                 textAlign: 'center', padding: '80px 40px',
@@ -479,7 +472,7 @@ export default function Listings() {
                 border: '1px dashed #B2EFE8',
               }}>
               <div style={{ fontSize: 64, marginBottom: 16 }}>🔍</div>
-              <h3 style={{ color: '#0D2B35', fontWeight: 800, fontSize: 20, marginBottom: 8 }}>Nothing found</h3>
+              <h3 style={{ color: '#0D2B35', fontWeight: 800, fontSize: 20, marginBottom: 8 }}>No listings found.</h3>
               <p style={{ color: '#7A9BA8', marginBottom: 28, fontSize: 15 }}>
                 Try different filters or be the first to post in this category!
               </p>
@@ -498,8 +491,7 @@ export default function Listings() {
             </motion.div>
           )}
 
-          
-          {!loading && listings.length > 0 && (
+          {!loading && !error && listings.length > 0 && (
             <>
               <AnimatePresence mode="wait">
                 {viewMode === 'grid' ? (
@@ -552,7 +544,7 @@ export default function Listings() {
                                   <span style={{ fontSize: 11, color: '#A0BCBB' }}>{'⭐'.repeat(item.condition)}</span>
                                 </div>
                                 <h3 style={{ fontWeight: 700, color: '#0D2B35', fontSize: 15, marginBottom: 4 }}>{item.title}</h3>
-                                <p style={{ color: '#7A9BA8', fontSize: 13 }}>{item.category} · {item.department_tag || 'IIIT Sonepat'}</p>
+                                <p style={{ color: '#7A9BA8', fontSize: 13 }}>{[item.category, item.department_tag].filter(Boolean).join(' · ')}</p>
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                 <div style={{
@@ -560,7 +552,7 @@ export default function Listings() {
                                   background: 'linear-gradient(135deg, #00C9B1, #00A896)',
                                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                                 }}>
-                                  {item.price === 1 ? 'Negotiate' : `₹${item.price}`}
+                                  {item.price === 1 ? 'Negotiable' : `₹${item.price}`}
                                 </div>
                                 <div style={{ fontSize: 12, color: '#A0BCBB', marginTop: 2 }}>View Details →</div>
                               </div>
@@ -573,7 +565,6 @@ export default function Listings() {
                 )}
               </AnimatePresence>
 
-              
               <div style={{
                 marginTop: 32, padding: '16px 24px',
                 background: '#fff', borderRadius: 16,

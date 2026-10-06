@@ -5,6 +5,14 @@ import toast from 'react-hot-toast'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
 
+const COLLEGE_EMAIL_DOMAIN = 'iiitsonepat.ac.in'
+
+// Same rule as the server: a name without spaces or "@", then "@" and the college domain.
+function isCollegeEmail(email) {
+  const [name, domain, ...rest] = email.trim().toLowerCase().split('@')
+  return /^\S+$/.test(name) && domain === COLLEGE_EMAIL_DOMAIN && rest.length === 0
+}
+
 export default function Register() {
   const isMobile = window.innerWidth < 768
   const [step, setStep] = useState(1)
@@ -28,7 +36,7 @@ export default function Register() {
         const schoolList = Array.isArray(data) ? data : data.schools || []
         setSchools(schoolList)
       })
-      .catch(() => toast.error('Connecting to server, please wait a moment ⏳'))
+      .catch(() => toast.error('Could not load schools. Please refresh the page.'))
       .finally(() => setSchoolsLoading(false))
   }, [])
 
@@ -43,6 +51,7 @@ export default function Register() {
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleSubmit = async () => {
+    if (!form.enrollment_no.trim()) { toast.error('Enter your enrollment number'); return }
     if (!form.school_id) { toast.error('Please select your school'); return }
     if (!form.department) { toast.error('Please select your department'); return }
     if (!form.semester) { toast.error('Please select your semester'); return }
@@ -51,43 +60,28 @@ export default function Register() {
       name: form.name.trim(),
       email: form.email.trim().toLowerCase(),
       password: form.password,
-      
       school: form.school_name,
       department: form.department,
-      semester: parseInt(form.semester),
-      enrollment_no: form.enrollment_no.trim() || null,
+      semester: parseInt(form.semester, 10),
+      enrollment_no: form.enrollment_no.trim(),
     }
 
-    console.log('Registering with:', payload)
     setLoading(true)
 
     try {
       const res = await API.post('/users/register', payload)
-      console.log('Response:', res.data)
-
-      const userData = res.data.user || res.data
-      const token = res.data.access_token || res.data.token
-
-      if (!token) {
-        toast.error('Account created! Please login.')
-        navigate('/login')
-        return
-      }
-
-      login(userData, token)
+      login(res.data.user, res.data.access_token)
       toast.success('Welcome to CampusNest! 🎓')
       navigate('/')
     } catch (err) {
-      console.error('Error:', err.response?.data)
+      console.error('Registration failed:', err.message)
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') {
         toast.error(detail)
-      } else if (Array.isArray(detail)) {
-        toast.error(detail.map(d => d.msg).join(', '))
       } else if (err.message === 'Network Error') {
         toast.error('Server is busy, please try again in a moment ⏳')
       } else {
-        toast.error('Registration failed — check console')
+        toast.error('Registration failed. Please try again.')
       }
     } finally {
       setLoading(false)
@@ -117,14 +111,13 @@ export default function Register() {
           border: '1px solid #D0F5F0', width: '100%', maxWidth: 480,
         }}
       >
-        
+
         <div style={{ textAlign: 'center', marginBottom: isMobile ? 16 : 32 }}>
           <div style={{ fontSize: isMobile ? 28 : 40, marginBottom: isMobile ? 4 : 8 }}>🎓</div>
           <h1 style={{ fontSize: isMobile ? 18 : 24, fontWeight: 900, color: '#0D2B35', marginBottom: 4 }}>Join CampusNest</h1>
-          <p style={{ color: '#7A9BA8', fontSize: 14 }}>IIIT Sonepat Students Only</p>
+          <p style={{ color: '#7A9BA8', fontSize: 14 }}>For college students</p>
         </div>
 
-        
         <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
           {[1, 2].map(s => (
             <div key={s} style={{
@@ -138,7 +131,6 @@ export default function Register() {
           STEP {step} OF 2 — {step === 1 ? 'PERSONAL DETAILS' : 'ACADEMIC DETAILS'}
         </p>
 
-        
         {step === 1 && (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
             style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 10 : 16 }}>
@@ -152,11 +144,14 @@ export default function Register() {
             </div>
 
             <div>
-              <label style={labelStyle}>Email Address *</label>
-              <input style={inputStyle} type="email" placeholder="your@email.com"
+              <label style={labelStyle}>College Email Address *</label>
+              <input style={inputStyle} type="email" placeholder={`yourname@${COLLEGE_EMAIL_DOMAIN}`}
                 value={form.email} onChange={e => update('email', e.target.value)}
                 onFocus={e => e.target.style.borderColor = '#00C9B1'}
                 onBlur={e => e.target.style.borderColor = '#D0ECE8'} />
+              <p style={{ fontSize: 12, marginTop: 4, color: '#7A9BA8' }}>
+                🎓 Use the email ID given by your college, ending in @{COLLEGE_EMAIL_DOMAIN}
+              </p>
             </div>
 
             <div>
@@ -197,7 +192,8 @@ export default function Register() {
             <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={() => {
                 if (!form.name.trim()) { toast.error('Enter your name'); return }
-                if (!form.email.trim()) { toast.error('Enter your email'); return }
+                if (!form.email.trim()) { toast.error('Enter your college email'); return }
+                if (!isCollegeEmail(form.email)) { toast.error('Use your college email'); return }
                 if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); return }
                 if (form.password !== form.confirm) { toast.error('Passwords do not match'); return }
                 setStep(2)
@@ -211,13 +207,12 @@ export default function Register() {
           </motion.div>
         )}
 
-        
         {step === 2 && (
           <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
             style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 10 : 16 }}>
 
             <div>
-              <label style={labelStyle}>Enrollment Number</label>
+              <label style={labelStyle}>Enrollment Number *</label>
               <input style={inputStyle} placeholder="Your enrollment / roll number"
                 value={form.enrollment_no} onChange={e => update('enrollment_no', e.target.value)}
                 onFocus={e => e.target.style.borderColor = '#00C9B1'}

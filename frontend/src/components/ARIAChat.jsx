@@ -1,17 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
 
 const suggestions = [
   'What books do I need for IT Sem 3?',
-  'Who is selling a calculator near me?',
+  'Is anyone selling a calculator?',
   'How does price prediction work?',
   'What is the borrow feature?',
 ]
 
 const agentSuggestions = [
-  '🧾 Draft: sell my calculator, good condition, 150 rupees',
+  '🧾 Draft: sell my calculator, good condition, bought for 1500 rupees',
   '🔍 Search: find a laptop under 10000 rupees',
 ]
 
@@ -20,7 +21,7 @@ export default function ARIAChat() {
   const [agentMode, setAgentMode] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
   const [messages, setMessages] = useState([
-    { role: 'aria', text: "Hi! I'm ARIA 🤖 — your IIIT Sonepat campus AI assistant. Ask me anything about listings, books, departments, or campus life!" }
+    { role: 'aria', text: "Hi! I'm ARIA 🤖 — the CampusNest assistant, powered by Gemini. Ask me about current listings or how selling, renting and borrowing work." }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -53,6 +54,10 @@ export default function ARIAChat() {
   }
 
   const sendAgent = async (msg) => {
+    if (!isAuthenticated) {
+      setMessages(prev => [...prev, { role: 'aria', text: 'Please log in to use the Listing Assistant.' }])
+      return
+    }
     setLoading(true)
     const isSearch = msg.toLowerCase().includes('find') || msg.toLowerCase().includes('search') || msg.toLowerCase().includes('looking for')
     try {
@@ -65,8 +70,9 @@ export default function ARIAChat() {
         draft: res.data.draft || null,
         matches: res.data.matches || null,
       }])
-    } catch {
-      setMessages(prev => [...prev, { role: 'aria', text: "Agent ran into an issue. Please try rephrasing your request." }])
+    } catch (err) {
+      const detail = err.response?.data?.detail
+      setMessages(prev => [...prev, { role: 'aria', text: typeof detail === 'string' ? `The Listing Assistant could not finish: ${detail}` : 'The Listing Assistant ran into an issue. Please try again.' }])
     } finally {
       setLoading(false)
     }
@@ -77,7 +83,7 @@ export default function ARIAChat() {
     try {
       const formData = new FormData()
       formData.append('title', draft.title)
-      formData.append('description', `Posted via ARIA Agent. AI-suggested price range: ${draft.price_range}`)
+      formData.append('description', `Posted via the CampusNest Listing Assistant. ML price estimate range: ${draft.price_range}`)
       formData.append('price', draft.suggested_price)
       formData.append('condition', draft.condition)
       formData.append('category', draft.category)
@@ -116,7 +122,7 @@ export default function ARIAChat() {
 
   return (
     <>
-      
+
       <motion.button
         onClick={() => setOpen(o => !o)}
         whileHover={{ scale: 1.1 }}
@@ -133,7 +139,6 @@ export default function ARIAChat() {
         {open ? '✕' : '🤖'}
       </motion.button>
 
-      
       <AnimatePresence>
         {open && (
           <motion.div
@@ -151,7 +156,7 @@ export default function ARIAChat() {
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
             }}
           >
-            
+
             <div style={{
               background: 'linear-gradient(135deg, #00C9B1, #00A896)',
               padding: isMobile ? '12px 14px' : '18px 20px',
@@ -166,13 +171,11 @@ export default function ARIAChat() {
               <div style={{ minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ fontWeight: 800, color: '#fff', fontSize: isMobile ? 14 : 16 }}>ARIA</div>
                 <div style={{ fontSize: isMobile ? 10 : 12, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap' }}>
-                  {agentMode ? '🤖 Agent Mode • Autonomous' : 'IIIT Sonepat Campus AI • Online'}
+                  {agentMode ? '🧾 Listing Assistant • rule-based' : 'CampusNest assistant • Gemini'}
                 </div>
               </div>
-              <div style={{ marginLeft: 'auto', width: 8, height: 8, borderRadius: '50%', background: '#7DFFEA', flexShrink: 0 }} />
             </div>
 
-            
             <div style={{
               padding: isMobile ? '8px 12px' : '10px 16px',
               borderBottom: '1px solid #E0F5F0',
@@ -181,7 +184,7 @@ export default function ARIAChat() {
               transition: 'background 0.2s',
             }}>
               <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: agentMode ? '#00A896' : '#7A9BA8' }}>
-                {agentMode ? '🤖 Agent Mode ON — autonomous actions' : 'Chat Mode'}
+                {agentMode ? '🧾 Listing Assistant ON — drafts listings & searches' : 'Chat Mode'}
               </span>
               <button
                 onClick={() => setAgentMode(a => !a)}
@@ -199,7 +202,6 @@ export default function ARIAChat() {
               </button>
             </div>
 
-            
             <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '12px' : '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {messages.map((m, i) => (
                 <motion.div key={i}
@@ -220,12 +222,11 @@ export default function ARIAChat() {
                   }}>
                     {m.role === 'agent' && (
                       <div style={{ fontSize: 10, fontWeight: 800, color: '#B45309', marginBottom: 6, letterSpacing: 0.5 }}>
-                        🤖 AGENT MODE
+                        🧾 LISTING ASSISTANT
                       </div>
                     )}
                     {m.text}
 
-                    
                     {m.steps && (
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed #FBBF24', display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {m.steps.map((s, idx) => (
@@ -234,16 +235,15 @@ export default function ARIAChat() {
                       </div>
                     )}
 
-                    
                     {m.draft && (
                       <div style={cardStyle}>
                         <div style={{ fontSize: 11, fontWeight: 800, color: '#00A896', marginBottom: 6 }}>📝 DRAFT LISTING</div>
                         <div style={{ fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#0D2B35', marginBottom: 4 }}>{m.draft.title}</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 11 : 12, color: '#7A9BA8' }}>
-                          <span>{m.draft.category} · Condition {m.draft.condition}/5</span>
+                          <span style={{ textTransform: 'capitalize' }}>{m.draft.listing_type} · {m.draft.category} · Condition {m.draft.condition}/5</span>
                           <span style={{ fontWeight: 800, color: '#00A896' }}>₹{m.draft.suggested_price}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: '#A0BCBB', marginTop: 2 }}>Fair range: {m.draft.price_range}</div>
+                        <div style={{ fontSize: 11, color: '#A0BCBB', marginTop: 2 }}>Estimated range: {m.draft.price_range} (from original price ₹{m.draft.original_price})</div>
 
                         {postedIndexes.includes(i) ? (
                           <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: '#E8FBF8', color: '#00A896', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>
@@ -265,11 +265,10 @@ export default function ARIAChat() {
                       </div>
                     )}
 
-                    
                     {m.matches && m.matches.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                         {m.matches.map((item) => (
-                          <a key={item.id} href={`/listings/${item.id}`} style={{ textDecoration: 'none' }}>
+                          <Link key={item.id} to={`/listings/${item.id}`} style={{ textDecoration: 'none' }}>
                             <div style={cardStyle}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span style={{ fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#0D2B35', flex: 1, marginRight: 8 }}>
@@ -279,7 +278,7 @@ export default function ARIAChat() {
                               </div>
                               <div style={{ fontSize: 11, color: '#A0BCBB', marginTop: 3 }}>{item.category} · Condition {item.condition}/5</div>
                             </div>
-                          </a>
+                          </Link>
                         ))}
                       </div>
                     )}
@@ -301,7 +300,6 @@ export default function ARIAChat() {
               <div ref={bottomRef} />
             </div>
 
-            
             {messages.length <= 1 && (
               <div style={{ padding: isMobile ? '0 10px 6px' : '0 12px 8px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {(agentMode ? agentSuggestions : suggestions).map(s => (
@@ -316,7 +314,6 @@ export default function ARIAChat() {
               </div>
             )}
 
-            
             <div style={{
               padding: isMobile ? '10px 12px' : '12px 16px', borderTop: '1px solid #E0F5F0',
               display: 'flex', gap: isMobile ? 6 : 10, alignItems: 'center',
@@ -325,7 +322,7 @@ export default function ARIAChat() {
               <input
                 value={input} onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && send()}
-                placeholder={agentMode ? "Tell the agent what to do..." : "Ask ARIA anything..."}
+                placeholder={agentMode ? "Describe an item to sell, or what to find..." : "Ask ARIA anything..."}
                 style={{
                   flex: 1, minWidth: 0, padding: isMobile ? '9px 12px' : '10px 14px', borderRadius: 20,
                   border: `1.5px solid ${agentMode ? '#FBBF24' : '#D0ECE8'}`, outline: 'none',
