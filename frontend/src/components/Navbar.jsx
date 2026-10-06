@@ -4,9 +4,10 @@ import { useState, useEffect } from 'react'
 import useAuthStore from '../store/authStore'
 import Logo from './Logo'
 import API from '../api/axios'
+import socket, { onReconnect } from '../api/socket'
 
 export default function Navbar() {
-  const { isAuthenticated, user, logout } = useAuthStore()
+  const { isAuthenticated, token, user, logout } = useAuthStore()
   const navigate = useNavigate()
   const location = useLocation()
   const [unreadCount, setUnreadCount] = useState(0)
@@ -17,23 +18,30 @@ export default function Navbar() {
   useEffect(() => { setMenuOpen(false) }, [location.pathname])
 
   useEffect(() => {
-    if (!isAuthenticated) return
+    if (!token) { setUnreadCount(0); return }
     const fetchUnread = async () => {
       try {
         const res = await API.get('/messages/unread-count')
         setUnreadCount(res.data.unread_count || 0)
       } catch {}
     }
+    const onUnreadCount = (data) => setUnreadCount(data.unread_count)
     fetchUnread()
-    const interval = setInterval(fetchUnread, 15000)
-    return () => clearInterval(interval)
-  }, [isAuthenticated])
+    // The server pushes the new count whenever it changes.
+    socket.on('unread:count', onUnreadCount)
+    const stopReconnectReload = onReconnect(fetchUnread)
+    return () => {
+      socket.off('unread:count', onUnreadCount)
+      stopReconnectReload()
+    }
+  }, [token])
 
   const navLinks = [
     { to: '/', label: 'Home' },
     { to: '/listings', label: 'Browse' },
     { to: '/messages', label: 'Messages', badge: unreadCount },
     { to: '/analytics', label: 'Analytics' },
+    ...(user?.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
   ]
 
   const linkStyle = (path) => ({
@@ -69,7 +77,6 @@ export default function Navbar() {
           </span>
         </Link>
 
-        
         <div className="desktop-nav">
           {navLinks.map(link => (
             <Link key={link.to} to={link.to} style={linkStyle(link.to)}>
@@ -101,7 +108,6 @@ export default function Navbar() {
           )}
         </div>
 
-        
         <button className="hamburger" onClick={() => setMenuOpen(!menuOpen)}>
           <span style={{ display: 'block', width: 24, height: 2, background: '#0D2B35', borderRadius: 2, transition: 'all 0.3s', transform: menuOpen ? 'rotate(45deg) translate(5px, 5px)' : 'none' }} />
           <span style={{ display: 'block', width: 24, height: 2, background: '#0D2B35', borderRadius: 2, transition: 'all 0.3s', opacity: menuOpen ? 0 : 1 }} />
@@ -109,7 +115,6 @@ export default function Navbar() {
         </button>
       </motion.nav>
 
-      
       <div className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
         {navLinks.map(link => (
           <Link key={link.to} to={link.to} style={mobileLinkStyle(link.to)}>

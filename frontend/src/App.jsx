@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import Navbar from './components/Navbar'
@@ -12,8 +13,27 @@ import Analytics from './pages/Analytics'
 import Profile from './pages/Profile'
 import Admin from './pages/Admin'
 import ARIAChat from './components/ARIAChat'
+import API from './api/axios'
+import socket from './api/socket'
+import useAuthStore from './store/authStore'
 
 export default function App() {
+  const { isAuthenticated, token, updateUser } = useAuthStore()
+
+  // Keep the stored user (WhatsApp number, admin flag) in sync with the server.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    API.get('/users/me').then(res => updateUser(res.data)).catch(() => {})
+  }, [isAuthenticated, updateUser])
+
+  // Messages and the unread badge update live over this connection. A new login reconnects
+  // with the new token.
+  useEffect(() => {
+    if (!token) return
+    socket.connect()
+    return () => { socket.disconnect() }
+  }, [token])
+
   return (
     <BrowserRouter>
       <Toaster position="top-right" toastOptions={{
@@ -35,7 +55,6 @@ export default function App() {
         <Route path="/listings/:id" element={<ListingDetail />} />
         <Route path="/post" element={<PostListing />} />
         <Route path="/messages" element={<Messages />} />
-        <Route path="/messages/:id" element={<Messages />} />
         <Route path="/analytics" element={<Analytics />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/admin" element={<Admin />} />

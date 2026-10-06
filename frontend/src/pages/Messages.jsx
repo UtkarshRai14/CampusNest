@@ -2,64 +2,69 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import API from '../api/axios'
+import socket, { onReconnect } from '../api/socket'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
 
-function getSmartReplies(messages, currentUserId) {
-  const lastMsg = [...messages].reverse().find(m => m.sender_id !== currentUserId)
-  if (!lastMsg) return getDefaultReplies()
-  const text = lastMsg.content.toLowerCase()
+// Canned, generic replies. They never contain personal details such as locations or times.
+const BUYER_REPLIES = [
+  { icon: '📦', text: 'Is this still available?' },
+  { icon: '💰', text: 'Is the price negotiable?' },
+  { icon: '📍', text: 'Where and when can we meet on campus?' },
+  { icon: '📸', text: 'Could you share more photos?' },
+  { icon: '👍', text: "Sounds good, let's do it." },
+  { icon: '🙏', text: 'Thank you!' },
+]
 
-  if (text.includes('negotia') || text.includes('price') || text.includes('discount')) {
-    return { label: '💰 Price Replies', replies: [
-      { icon: '🤝', text: 'Price is slightly negotiable. Come meet me after 7 PM, we can discuss!' },
-      { icon: '💰', text: 'Price is fixed. Best quality at this price!' },
-      { icon: '📉', text: 'For quick pickup today, I can offer a small discount. Come after 7 PM.' },
-    ]}
-  }
-  if (text.includes('available') || text.includes('still') || text.includes('sold')) {
-    return { label: '📦 Availability Replies', replies: [
-      { icon: '✅', text: 'Yes, still available! Come after 7 PM today.' },
-      { icon: '⚡', text: 'Available right now! Come to my hostel anytime.' },
-      { icon: '⏳', text: 'One person is already looking. First come first served!' },
-      { icon: '❌', text: 'Sorry, this item has been sold already.' },
-    ]}
-  }
-  if (text.includes('where') || text.includes('location') || text.includes('collect')) {
-    return { label: '📍 Location Replies', replies: [
-      { icon: '🏠', text: 'I am in Boys Hostel Block B, Room 204. Come after 7 PM.' },
-      { icon: '🏠', text: 'I am in Girls Hostel Block A, Room 102. Available after 6 PM.' },
-      { icon: '🏫', text: 'Let\'s meet near the campus main gate. Free after 5 PM today.' },
-      { icon: '☕', text: 'Meet at college canteen tomorrow 1-2 PM lunch break.' },
-    ]}
-  }
-  if (text.includes('condition') || text.includes('working') || text.includes('photo')) {
-    return { label: '⭐ Condition Replies', replies: [
-      { icon: '✅', text: 'Excellent condition, works perfectly. Come inspect before buying!' },
-      { icon: '📸', text: 'I will send more photos. Share your WhatsApp number.' },
-      { icon: '🔍', text: 'Minor wear but fully functional. Come check in person after 7 PM.' },
-    ]}
-  }
-  if (text.includes('when') || text.includes('time') || text.includes('today')) {
-    return { label: '📅 Timing Replies', replies: [
-      { icon: '🌙', text: 'I am free today after 7 PM. Come to my hostel!' },
-      { icon: '📅', text: 'Available tomorrow evening after 6 PM.' },
-      { icon: '⚡', text: 'Free right now! Come whenever you want.' },
-      { icon: '🗓️', text: 'This weekend works — Saturday or Sunday after 2 PM.' },
-    ]}
-  }
-  return getDefaultReplies()
+const SELLER_DEFAULT_REPLIES = [
+  { icon: '✅', text: 'Yes, it is still available.' },
+  { icon: '🤝', text: "The price is negotiable. Let's discuss." },
+  { icon: '📍', text: "Let's meet on campus. When are you free?" },
+  { icon: '👍', text: "Sounds good, let's do it." },
+  { icon: '🙏', text: 'Thanks for your interest!' },
+]
+
+// The seller's suggestions depend on what the buyer last asked about.
+const SELLER_TOPICS = [
+  { keywords: ['negotia', 'price', 'discount'], label: '💰 Price', replies: [
+    { icon: '🤝', text: 'The price is negotiable. What offer do you have in mind?' },
+    { icon: '💰', text: 'Sorry, the price is fixed.' },
+  ]},
+  { keywords: ['available', 'still', 'sold'], label: '📦 Availability', replies: [
+    { icon: '✅', text: 'Yes, it is still available.' },
+    { icon: '❌', text: 'Sorry, this item is no longer available.' },
+  ]},
+  { keywords: ['where', 'location', 'collect', 'meet'], label: '📍 Meeting', replies: [
+    { icon: '🏫', text: "Let's meet somewhere on campus. Where is convenient for you?" },
+    { icon: '🕐', text: 'When are you free to meet?' },
+  ]},
+  { keywords: ['condition', 'working', 'photo'], label: '⭐ Condition', replies: [
+    { icon: '✅', text: 'You are welcome to check the item in person before buying.' },
+    { icon: '📸', text: 'I can share more photos. What would you like to see?' },
+  ]},
+  { keywords: ['when', 'time', 'today'], label: '📅 Timing', replies: [
+    { icon: '📅', text: 'What day and time work for you?' },
+  ]},
+]
+
+function getQuickReplies(messages, currentUserId, isSeller) {
+  const fallback = { label: '💬 Quick Replies', replies: isSeller ? SELLER_DEFAULT_REPLIES : BUYER_REPLIES }
+  if (!isSeller) return fallback
+  const lastReceived = [...messages].reverse().find(m => m.sender_id !== currentUserId)
+  if (!lastReceived) return fallback
+  const text = lastReceived.content.toLowerCase()
+  return SELLER_TOPICS.find(t => t.keywords.some(k => text.includes(k))) || fallback
 }
 
-function getDefaultReplies() {
-  return { label: '💬 Quick Replies', replies: [
-    { icon: '✅', text: 'Yes, still available! Come meet me after 7 PM today.' },
-    { icon: '🤝', text: 'Price is slightly negotiable. Let\'s discuss in person after 7 PM.' },
-    { icon: '📍', text: 'I am in hostel Block B. Come after 7 PM any weekday.' },
-    { icon: '👍', text: 'Sounds good! Let\'s finalize the deal today evening.' },
-    { icon: '📸', text: 'I will send more photos. Share your WhatsApp number.' },
-    { icon: '✅', text: 'Deal confirmed! See you soon. 🎉' },
-  ]}
+const isInConversation = (msg, conv) => msg.listing_id === conv.listing_id
+  && (msg.sender_id === conv.other_user_id || msg.receiver_id === conv.other_user_id)
+
+// A saved message can arrive twice (send response and live event) but is shown once.
+// It takes the place of this tab's temporary copy of the same text, if there is one.
+function withMessage(list, msg) {
+  if (list.some(m => m.id === msg.id)) return list
+  const tempIndex = list.findIndex(m => String(m.id).startsWith('temp-') && m.sender_id === msg.sender_id && m.content === msg.content)
+  return tempIndex === -1 ? [...list, msg] : list.map((m, i) => (i === tempIndex ? msg : m))
 }
 
 export default function Messages() {
@@ -71,66 +76,108 @@ export default function Messages() {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [showQuickReplies, setShowQuickReplies] = useState(false)
-  const [smartReplies, setSmartReplies] = useState(getDefaultReplies())
   const [refreshing, setRefreshing] = useState(false)
   const bottomRef = useRef(null)
-  const refreshTimerRef = useRef(null)
+  // Socket handlers are registered once, so they read the open conversation through a ref.
+  const activeConvRef = useRef(null)
+  const sendingRef = useRef(false)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const fetchConversations = async (silent = false) => {
+    if (!silent) setLoading(true)
+    try {
+      const res = await API.get('/messages/conversations')
+      const data = res.data?.conversations
+      setConversations(Array.isArray(data) ? data : [])
+      setLoadError(false)
+    } catch {
+      if (!silent) setLoadError(true)
+    } finally { if (!silent) setLoading(false) }
+  }
+
+  // Opening a thread also marks the messages you received in it as read.
+  const fetchThread = async (conv) => {
+    const res = await API.get(`/messages/${conv.listing_id}/${conv.other_user_id}`)
+    return Array.isArray(res.data) ? res.data : []
+  }
+
+  const isStillActive = (conv) => activeConvRef.current?.conversation_id === conv.conversation_id
+
+  const selectConversation = (conv) => {
+    activeConvRef.current = conv
+    setActiveConv(conv)
+  }
+
+  const markRead = (conv) => API.post(`/messages/${conv.listing_id}/${conv.other_user_id}/read`).catch(() => {})
+
+  const reloadActiveThread = async () => {
+    const conv = activeConvRef.current
+    if (!conv) return
+    try {
+      const fresh = await fetchThread(conv)
+      if (isStillActive(conv)) setMessages(fresh)
+    } catch {}
+  }
 
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return }
     fetchConversations()
+
+    const onNewMessage = async (msg) => {
+      const conv = activeConvRef.current
+      if (conv && isInConversation(msg, conv)) {
+        setMessages(prev => withMessage(prev, msg))
+        // The conversation is open, so a message from the other person is read on arrival.
+        if (msg.sender_id === conv.other_user_id) await markRead(conv)
+      }
+      fetchConversations(true)
+    }
+    // Messages were deleted, or live updates were missed while offline.
+    const reload = async () => {
+      await reloadActiveThread()
+      fetchConversations(true)
+    }
+
+    socket.on('message:new', onNewMessage)
+    socket.on('messages:deleted', reload)
+    const stopReconnectReload = onReconnect(reload)
+    return () => {
+      socket.off('message:new', onNewMessage)
+      socket.off('messages:deleted', reload)
+      stopReconnectReload()
+    }
   }, [])
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    if (messages.length > 0 && user) {
-      setSmartReplies(getSmartReplies(messages, user.id))
-    }
-  }, [messages])
-
-  const fetchConversations = async () => {
-    setLoading(true)
+  const openConversation = async (conv) => {
+    selectConversation(conv)
+    setShowQuickReplies(false)
+    setMessages([])
     try {
-      const res = await API.get('/messages/conversations')
-      const data = res.data?.conversations || res.data || []
-      setConversations(Array.isArray(data) ? data : [])
-    } catch { setConversations([]) }
-    finally { setLoading(false) }
+      const msgs = await fetchThread(conv)
+      if (!isStillActive(conv)) return
+      // Keep anything that arrived live while the thread was loading.
+      setMessages(prev => prev.reduce(withMessage, msgs))
+      fetchConversations(true)
+    } catch { toast.error('Failed to load messages') }
   }
 
-  
-  useEffect(() => {
-    if (!activeConv) return
-    const autoRefresh = setInterval(async () => {
-      try {
-        const res = await API.get(`/messages/${activeConv.listing_id}/${activeConv.other_user_id}`)
-        const newMsgs = Array.isArray(res.data) ? res.data : []
-        if (newMsgs.length !== messages.length) {
-          setMessages(newMsgs)
-        }
-      } catch {}
-    }, 5000)
-    return () => clearInterval(autoRefresh)
-  }, [activeConv, messages.length])
-
-  const openConversation = async (conv) => {
-    setActiveConv(conv)
-    setShowQuickReplies(false)
-    try {
-      const res = await API.get(`/messages/${conv.listing_id}/${conv.other_user_id}`)
-      const msgs = Array.isArray(res.data) ? res.data : []
-      setMessages(msgs)
-      if (msgs.length > 0 && user) setSmartReplies(getSmartReplies(msgs, user.id))
-    } catch { setMessages([]) }
+  const closeConversation = () => {
+    activeConvRef.current = null
+    setActiveConv(null)
+    setMessages([])
   }
 
   const refreshMessages = async () => {
     if (!activeConv) return
     setRefreshing(true)
     try {
-      const res = await API.get(`/messages/${activeConv.listing_id}/${activeConv.other_user_id}`)
-      setMessages(Array.isArray(res.data) ? res.data : [])
+      const fresh = await fetchThread(activeConv)
+      if (isStillActive(activeConv)) setMessages(fresh)
       toast.success('Refreshed!')
     } catch { toast.error('Failed to refresh') }
     finally { setRefreshing(false) }
@@ -138,9 +185,8 @@ export default function Messages() {
 
   const shareContact = () => {
     if (!activeConv) return
-    const phone = user?.whatsapp || '9' + Math.floor(100000000 + Math.random() * 900000000)
-    const card = `📇 Contact Card\n👤 ${user?.name}\n✉️ ${user?.email}\n📱 +91 ${phone}`
-    sendMessage(card)
+    if (!user?.whatsapp) { toast.error('Add your WhatsApp number in Profile first.'); return }
+    sendMessage(`📇 Contact Card\n👤 ${user.name}\n✉️ ${user.email}\n📱 +91 ${user.whatsapp}`)
   }
 
   const deleteConversation = async () => {
@@ -149,50 +195,51 @@ export default function Messages() {
     try {
       await API.delete(`/messages/${activeConv.listing_id}/${activeConv.other_user_id}`)
       toast.success('Conversation deleted')
-      setActiveConv(null)
-      setMessages([])
-      fetchConversations()
+      closeConversation()
     } catch { toast.error('Failed to delete') }
   }
 
   const sendMessage = async (text) => {
     const msgText = text || input.trim()
-    if (!msgText || !activeConv) return
+    const conv = activeConv
+    if (!msgText || !conv || sendingRef.current) return
+    sendingRef.current = true
     setInput('')
     setShowQuickReplies(false)
     setSending(true)
 
     const tempMsg = {
-      id: Date.now(),
+      id: `temp-${Date.now()}`,
       content: msgText,
       sender_id: user.id,
-      receiver_id: activeConv.other_user_id,
-      listing_id: activeConv.listing_id,
+      receiver_id: conv.other_user_id,
+      listing_id: conv.listing_id,
       created_at: new Date().toISOString(),
     }
     setMessages(prev => [...prev, tempMsg])
 
     try {
-      await API.post('/messages/', {
+      const res = await API.post('/messages/', {
         content: msgText,
-        listing_id: activeConv.listing_id,
-        receiver_id: activeConv.other_user_id,
+        listing_id: conv.listing_id,
+        receiver_id: conv.other_user_id,
       })
-      
-      setTimeout(async () => {
-        const res = await API.get(`/messages/${activeConv.listing_id}/${activeConv.other_user_id}`)
-        setMessages(Array.isArray(res.data) ? res.data : [])
-      }, 800)
-      fetchConversations()
-    } catch {
-      toast.error('Failed to send')
+      // The live event for this message (and any automatic first reply) may have come first.
+      if (isStillActive(conv)) setMessages(prev => withMessage(prev.filter(m => m.id !== tempMsg.id), res.data))
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to send')
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
-    } finally { setSending(false) }
+      if (!text) setInput(msgText)
+    }
+    sendingRef.current = false
+    setSending(false)
   }
 
   if (!isAuthenticated) return null
 
   const lastReceivedMsg = [...messages].reverse().find(m => m.sender_id !== user?.id)
+  const isSeller = activeConv?.listing_seller_id === user?.id
+  const quickReplies = getQuickReplies(messages, user?.id, isSeller)
 
   return (
     <div style={{ minHeight: '100vh', background: '#F5FFFE' }}>
@@ -205,14 +252,13 @@ export default function Messages() {
 
         <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth < 768 ? '1fr' : '300px 1fr', gap: 20, height: window.innerWidth < 768 ? '75vh' : '78vh' }}>
 
-          
           <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', overflow: 'hidden', display: (window.innerWidth < 768 && activeConv) ? 'none' : 'flex', flexDirection: 'column', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #E0F5F0', fontWeight: 800, color: '#0D2B35', fontSize: 15, background: 'linear-gradient(135deg, #F8FFFE, #F0FFFE)', display: 'flex', alignItems: 'center', gap: 8 }}>
               Conversations
               {conversations.length > 0 && (
                 <span style={{ background: 'linear-gradient(135deg, #00C9B1, #00A896)', color: '#fff', borderRadius: 20, padding: '2px 8px', fontSize: 12, fontWeight: 700 }}>{conversations.length}</span>
               )}
-              <button onClick={fetchConversations} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#00A896' }} title="Refresh">🔄</button>
+              <button onClick={() => fetchConversations()} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#00A896' }} title="Refresh">🔄</button>
             </div>
 
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -227,6 +273,12 @@ export default function Messages() {
                       </div>
                     </div>
                   ))}
+                </div>
+              ) : loadError ? (
+                <div style={{ padding: '40px 20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+                  <p style={{ color: '#7A9BA8', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Unable to load conversations. Please try again.</p>
+                  <button onClick={() => fetchConversations()} style={{ padding: '8px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #00C9B1, #00A896)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>Try again</button>
                 </div>
               ) : conversations.length === 0 ? (
                 <div style={{ padding: '40px 20px', textAlign: 'center' }}>
@@ -254,16 +306,18 @@ export default function Messages() {
                       <div style={{ fontWeight: 700, color: '#0D2B35', fontSize: 14, marginBottom: 2 }}>{conv.other_user_name}</div>
                       <div style={{ fontSize: 12, color: '#00A896', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📦 {conv.listing_title}</div>
                       {conv.last_message && (
-                        <div style={{ fontSize: 12, color: '#A0BCBB', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.last_message}</div>
+                        <div style={{ fontSize: 12, color: conv.unread_count > 0 ? '#0D2B35' : '#A0BCBB', fontWeight: conv.unread_count > 0 ? 700 : 400, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{conv.last_message}</div>
                       )}
                     </div>
+                    {conv.unread_count > 0 && (
+                      <span style={{ background: 'linear-gradient(135deg, #00C9B1, #00A896)', color: '#fff', borderRadius: 20, minWidth: 20, height: 20, padding: '0 6px', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{conv.unread_count}</span>
+                    )}
                   </div>
                 </motion.div>
               ))}
             </div>
           </div>
 
-          
           <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', display: (window.innerWidth < 768 && !activeConv) ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
             {!activeConv ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
@@ -273,10 +327,10 @@ export default function Messages() {
               </div>
             ) : (
               <>
-                
+
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0F5F0', display: 'flex', alignItems: 'center', gap: 10, background: 'linear-gradient(135deg, #F8FFFE, #F0FFFE)', flexWrap: 'nowrap' }}>
                   {window.innerWidth < 768 && (
-                    <button onClick={() => setActiveConv(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00A896', flexShrink: 0, padding: 0, lineHeight: 1 }}>←</button>
+                    <button onClick={closeConversation} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00A896', flexShrink: 0, padding: 0, lineHeight: 1 }}>←</button>
                   )}
 
                   <div style={{ width: 40, height: 40, minWidth: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #00C9B1, #00A8E8)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 16, flexShrink: 0 }}>
@@ -301,7 +355,7 @@ export default function Messages() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div style={{ display: 'flex', gap: window.innerWidth < 768 ? 4 : 8, alignItems: 'center', flexShrink: 0 }}>
                     <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                       onClick={shareContact}
@@ -321,16 +375,9 @@ export default function Messages() {
                       style={{ width: window.innerWidth < 768 ? 30 : 36, height: window.innerWidth < 768 ? 30 : 36, borderRadius: '50%', border: '1.5px solid #FFD0D0', background: '#FFF5F5', cursor: 'pointer', fontSize: window.innerWidth < 768 ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#E05555', flexShrink: 0 }}>
                       🗑️
                     </motion.button>
-                    {window.innerWidth >= 768 && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#00C9B1' }} />
-                        <span style={{ fontSize: 12, color: '#7A9BA8' }}>Online</span>
-                      </div>
-                    )}
                   </div>
                 </div>
 
-                
                 <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 12, background: 'linear-gradient(180deg, #FAFFFE 0%, #F5FFFE 100%)' }}>
                   {messages.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0', color: '#A0BCBB' }}>
@@ -380,7 +427,6 @@ export default function Messages() {
                   <div ref={bottomRef} />
                 </div>
 
-                
                 <AnimatePresence>
                   {showQuickReplies && (
                     <motion.div
@@ -390,7 +436,7 @@ export default function Messages() {
                       style={{ borderTop: '1px solid #E0F5F0', background: '#F8FFFE', overflow: 'hidden' }}
                     >
                       <div style={{ padding: '10px 16px 6px', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #E0F5F0' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#00A896' }}>⚡ {smartReplies.label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#00A896' }}>⚡ {quickReplies.label}</span>
                         {lastReceivedMsg && (
                           <span style={{ fontSize: 11, color: '#A0BCBB', background: '#F0FFFE', padding: '2px 10px', borderRadius: 20, border: '1px solid #E0F5F0', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             Re: "{lastReceivedMsg.content.substring(0, 25)}..."
@@ -398,7 +444,7 @@ export default function Messages() {
                         )}
                       </div>
                       <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-                        {smartReplies.replies.map((reply, i) => (
+                        {quickReplies.replies.map((reply, i) => (
                           <motion.button key={i}
                             initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: i * 0.04 }}
@@ -418,7 +464,6 @@ export default function Messages() {
                   )}
                 </AnimatePresence>
 
-                
                 <div style={{ padding: window.innerWidth < 768 ? '10px 10px' : '12px 16px', borderTop: '1px solid #E0F5F0', display: 'flex', gap: window.innerWidth < 768 ? 6 : 10, alignItems: 'center', background: '#fff' }}>
                   <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}
                     onClick={() => setShowQuickReplies(!showQuickReplies)}
@@ -428,7 +473,7 @@ export default function Messages() {
                   <input
                     value={input} onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    placeholder={window.innerWidth < 768 ? "Type a message..." : "Type a message or tap ⚡ for smart replies..."}
+                    placeholder={window.innerWidth < 768 ? "Type a message..." : "Type a message or tap ⚡ for quick replies..."}
                     style={{ flex: 1, minWidth: 0, padding: window.innerWidth < 768 ? '10px 12px' : '12px 16px', borderRadius: 24, border: '1.5px solid #D0ECE8', outline: 'none', fontSize: window.innerWidth < 768 ? 13 : 14, color: '#0D2B35', background: '#F8FFFE', transition: 'all 0.2s' }}
                     onFocus={e => e.target.style.borderColor = '#00C9B1'}
                     onBlur={e => e.target.style.borderColor = '#D0ECE8'}
