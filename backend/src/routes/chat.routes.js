@@ -8,7 +8,7 @@ const router = express.Router();
 router.post('/', authenticate, asyncHandler(chatController.chat));
 router.post('/guest', asyncHandler(chatController.chatGuest));
 router.delete('/history', authenticate, asyncHandler(chatController.clearHistory));
-router.post('/agent', asyncHandler(chatController.chatAgent));
-router.post('/agent/search', asyncHandler(chatController.chatAgentSearch));
+router.post('/agent', authenticate, asyncHandler(chatController.chatAgent));
+router.post('/agent/search', authenticate, asyncHandler(chatController.chatAgentSearch));
 
 module.exports = router;

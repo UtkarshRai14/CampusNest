@@ -6,93 +6,97 @@ const chatHistoryModel = require('../../models/chatHistory.model');
 
 const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
 
-
-
-
+const GEMINI_MODEL = 'gemini-3.7-flash';
+// Without a limit a slow or overloaded Gemini keeps the request open for minutes;
+// after this the user gets the fallback reply instead.
+const GEMINI_TIMEOUT_MS = 20000;
+// Only the latest few turns are sent to Gemini (5 user messages + 5 replies).
+const HISTORY_MESSAGES = 10;
+const LISTINGS_IN_CONTEXT = 20;
 
 async function getLiveListingsSummary() {
   try {
     const listings = await listingModel.findAllActive();
-    const first20 = listings.slice(0, 20);
-    if (first20.length === 0) {
-      return 'No listings available.';
-    }
+    if (listings.length === 0) return 'No listings available.';
+
     let summary = 'LIVE LISTINGS:\n';
-    for (const l of first20) {
+    for (const l of listings.slice(0, LISTINGS_IN_CONTEXT)) {
       summary += `- ${l.title} | ${l.category} | ${l.listing_type} | Rs.${l.price}\n`;
     }
     return summary;
   } catch (err) {
+    console.error(`ARIA could not load listings: ${err.message}`);
     return 'Listings unavailable.';
   }
 }
 
-
-async function saveMessage(userId, role, msgContent) {
+async function loadHistory(userId) {
   try {
-    await chatHistoryModel.save(userId, role, msgContent);
+    const rows = await chatHistoryModel.findRecent(userId, HISTORY_MESSAGES);
+    // Gemini expects the conversation to begin with a user turn.
+    const firstUser = rows.findIndex((r) => r.role === 'user');
+    if (firstUser === -1) return [];
+    return rows.slice(firstUser).map((r) => ({ role: r.role, parts: [{ text: r.content }] }));
   } catch (err) {
-    
+    console.error(`ARIA could not load chat history: ${err.message}`);
+    return [];
   }
 }
 
+async function saveTurn(userId, userMessage, ariaReply) {
+  try {
+    await chatHistoryModel.saveTurn(userId, userMessage, ariaReply);
+  } catch (err) {
+    console.error(`ARIA could not save chat history: ${err.message}`);
+  }
+}
+
+// Used only when Gemini is unavailable. It never mentions specific items or prices,
+// because it has no access to the live listings.
+const FALLBACK_REPLIES = [
+  [/\b(borrow|lend)\b/, 'You can borrow items from fellow students. Open Browse, choose the Borrow listing type, and message the owner to arrange it.'],
+  [/\b(rent|renting)\b/, 'To rent an item, open Browse, choose the Rent listing type, and message the owner to agree on the period and price.'],
+  [/\b(sell|selling|post)\b/, 'To sell something, click "+ List Item" in the navbar and follow the 3 steps. On the pricing step you can get an ML-based price estimate.'],
+  [/\b(books?|notes|calculators?|laptops?|fans?|coolers?|hostel|bed|stationery|electronics?)\b/, "I can't look up live listings right now. Open Browse and pick the matching category to see what is currently listed."],
+  [/\b(hi|hello|hey)\b/, 'Hello! I am ARIA, the CampusNest assistant. Ask me how selling, renting or borrowing works.'],
+];
+const DEFAULT_FALLBACK = "I'm having trouble answering right now. You can check the Browse page for current listings, or ask me how selling, renting and borrowing work.";
 
 function getFallbackResponse(message) {
-  const msg = message.toLowerCase();
-  if (msg.includes('borrow')) {
-    return 'Borrow items from fellow IIIT Sonepat students temporarily! Browse Borrow listings and contact the seller.';
-  }
-  if (msg.includes('calculator') || msg.includes('casio')) {
-    return 'Casio fx-991ES PLUS available to borrow for Rs.100/day! Check Calculator category.';
-  }
-  if (msg.includes('book') || msg.includes('notes')) {
-    return 'Books available: Engineering Maths Rs.130, CS Books Rs.800, GATE Papers Rs.400. Browse Books!';
-  }
-  if (msg.includes('laptop')) {
-    return 'HP Laptop available to borrow for Rs.200/day. Check Laptop category!';
-  }
-  if (msg.includes('hostel') || msg.includes('fan') || msg.includes('cooler') || msg.includes('bed')) {
-    return 'Hostel Items: Bed Rs.1500, Almirah Rs.2400, Fan Rs.600, Cooler rent Rs.500/month!';
-  }
-  if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey')) {
-    return 'Hello! I am ARIA your IIIT Sonepat Campus AI. Ask me about listings, prices, or features!';
-  }
-  if (msg.includes('sell') || msg.includes('post')) {
-    return 'Click + List Item in navbar, fill 3 steps, AI suggests price, go live instantly!';
-  }
-  return 'I am ARIA! Ask me: What books are available? How does borrowing work? Show hostel items?';
+  const text = message.toLowerCase();
+  const match = FALLBACK_REPLIES.find(([pattern]) => pattern.test(text));
+  return match ? match[1] : DEFAULT_FALLBACK;
 }
 
-
-
-
-
-
-async function chatWithAria(message, userId, userName = null, userDepartment = null, userSemester = null) {
+// `user` is the logged-in user, or null for a guest. Only logged-in users get
+// conversation memory; guest messages are never stored.
+async function chatWithAria(message, user = null) {
   try {
     const liveListings = await getLiveListingsSummary();
-    const context = `Student: ${userName}, Dept: ${userDepartment}, Sem: ${userSemester}`;
-    const fullMessage = `[${context}]\n[${liveListings}]\nQuestion: ${message}`;
+    const student = user ? `[Student: ${user.name}, Dept: ${user.department}, Sem: ${user.semester}]\n` : '';
+    const currentTurn = `${student}[${liveListings}]\nQuestion: ${message}`;
 
-    await saveMessage(userId, 'user', message);
+    const history = user ? await loadHistory(user.id) : [];
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: fullMessage,
+      model: GEMINI_MODEL,
+      contents: [...history, { role: 'user', parts: [{ text: currentTurn }] }],
       config: {
         systemInstruction: getContext(),
         maxOutputTokens: 500,
+        httpOptions: { timeout: GEMINI_TIMEOUT_MS },
       },
     });
-    const ariaResponse = response.text;
 
-    await saveMessage(userId, 'model', ariaResponse);
-    return ariaResponse;
+    const ariaReply = response.text;
+    if (!ariaReply) throw new Error('Empty response from Gemini');
+
+    if (user) await saveTurn(user.id, message, ariaReply);
+    return ariaReply;
   } catch (err) {
-    
     console.error(`ARIA Error: ${err.message || err}`);
     return getFallbackResponse(message);
   }
 }
 
-module.exports = { chatWithAria, getFallbackResponse, getLiveListingsSummary };
+module.exports = { chatWithAria };

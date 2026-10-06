@@ -1,17 +1,3 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function escapeXml(str) {
   return String(str).replace(/[<>&'"]/g, (c) => ({
     '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;',
@@ -61,40 +47,4 @@ function generateTrendingChart(categories, counts) {
 </svg>`.trim());
 }
 
-
-function generateDemandChart(departments, counts) {
-  const width = 760;
-  const height = Math.max(260, 60 + departments.length * 40);
-  const marginLeft = 220;
-  const marginRight = 40;
-  const marginTop = 50;
-  const marginBottom = 40;
-  const plotWidth = width - marginLeft - marginRight;
-  const plotHeight = height - marginTop - marginBottom;
-  const maxCount = Math.max(...counts, 1);
-  const barGap = 10;
-  const barHeight = Math.max((plotHeight - barGap * (departments.length - 1)) / departments.length, 10);
-
-  let bars = '';
-  departments.forEach((dept, i) => {
-    const y = marginTop + i * (barHeight + barGap);
-    const w = (counts[i] / maxCount) * plotWidth;
-    
-    const shade = 30 + Math.round((i / Math.max(departments.length - 1, 1)) * 50);
-    const color = `hsl(210, 60%, ${shade}%)`;
-    const label = dept.length > 20 ? `${dept.slice(0, 20)}...` : dept;
-    bars += `<rect x="${marginLeft}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${barHeight.toFixed(1)}" fill="${color}" />`;
-    bars += `<text x="${marginLeft - 10}" y="${(y + barHeight / 2 + 4).toFixed(1)}" font-size="11" fill="#333" text-anchor="end">${escapeXml(label)}</text>`;
-    bars += `<text x="${(marginLeft + w + 6).toFixed(1)}" y="${(y + barHeight / 2 + 4).toFixed(1)}" font-size="11" fill="#333">${counts[i]}</text>`;
-  });
-
-  return toDataUri(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-  <rect x="0" y="0" width="${width}" height="${height}" fill="#F8FFFE" />
-  <text x="${width / 2}" y="26" font-size="16" font-weight="bold" fill="#0A1628" text-anchor="middle">Demand by Department</text>
-  <text x="${marginLeft + plotWidth / 2}" y="${height - 8}" font-size="10" fill="#555" text-anchor="middle">Number of Listings</text>
-  ${bars}
-</svg>`.trim());
-}
-
-module.exports = { generateTrendingChart, generateDemandChart };
+module.exports = { generateTrendingChart };

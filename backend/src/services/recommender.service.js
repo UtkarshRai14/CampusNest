@@ -1,23 +1,5 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const pool = require('../db/pool');
+const userModel = require('../models/user.model');
 
 async function queryActiveListings({ excludeSellerId, departmentTag, semesterTag, limit }) {
   const clauses = ['is_active = TRUE', 'is_flagged = FALSE', 'seller_id != $1'];
@@ -66,8 +48,7 @@ async function getPopularListings(limit = 6) {
 }
 
 async function getRecommendations(userId, limit = 6) {
-  const { rows: userRows } = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-  const currentUser = userRows[0];
+  const currentUser = await userModel.findById(userId);
   if (!currentUser) {
     return getPopularListings(limit);
   }
@@ -87,7 +68,7 @@ async function getRecommendations(userId, limit = 6) {
     limit: limit * 2,
   });
 
-  const scored = new Map(); 
+  const scored = new Map();
   const byId = new Map();
 
   const addScore = (listing, points) => {
@@ -101,7 +82,7 @@ async function getRecommendations(userId, limit = 6) {
 
   const sortedIds = Array.from(scored.keys())
     .map((id, index) => ({ id, index, score: scored.get(id) }))
-    
+    // Ties keep insertion order: department matches first, then semester, then recency.
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .slice(0, limit)
     .map((entry) => entry.id);
@@ -127,4 +108,4 @@ async function getRecommendations(userId, limit = 6) {
   return result.slice(0, limit);
 }
 
-module.exports = { getRecommendations, getPopularListings };
+module.exports = { getRecommendations };

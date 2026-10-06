@@ -1,16 +1,16 @@
 const chatbotService = require('../services/aria/chatbot.service');
 const agentService = require('../services/aria/agent.service');
 const chatHistoryModel = require('../models/chatHistory.model');
-const HttpError = require('../utils/HttpError');
+const { parseText } = require('../utils/validators');
 
+const MAX_MESSAGE_LENGTH = 1000;
+
+function readMessage(req) {
+  return parseText((req.body || {}).message, 'Message', { max: MAX_MESSAGE_LENGTH });
+}
 
 async function chat(req, res) {
-  const { message } = req.body || {};
-  if (!message) throw new HttpError(422, [{ msg: 'message is required' }]);
-
-  const response = await chatbotService.chatWithAria(
-    message, req.user.id, req.user.name, req.user.department, req.user.semester
-  );
+  const response = await chatbotService.chatWithAria(readMessage(req), req.user);
   return res.json({
     response,
     user: req.user.name,
@@ -19,41 +19,22 @@ async function chat(req, res) {
   });
 }
 
-
 async function chatGuest(req, res) {
-  const { message } = req.body || {};
-  if (!message) throw new HttpError(422, [{ msg: 'message is required' }]);
-
-  const response = await chatbotService.chatWithAria(message, 0);
+  const response = await chatbotService.chatWithAria(readMessage(req));
   return res.json({ response });
 }
-
 
 async function clearHistory(req, res) {
   await chatHistoryModel.deleteForUser(req.user.id);
   return res.json({ message: 'Chat history cleared' });
 }
 
-
 async function chatAgent(req, res) {
-  const { message } = req.body || {};
-  if (!message) throw new HttpError(422, [{ msg: 'message is required' }]);
-
-  const result = await agentService.runListingAgent(message);
-  return res.json(result);
+  return res.json(await agentService.runListingAgent(readMessage(req)));
 }
 
-
-
-
-
-
 async function chatAgentSearch(req, res) {
-  const { message } = req.body || {};
-  if (!message) throw new HttpError(422, [{ msg: 'message is required' }]);
-
-  const result = await agentService.runSearchAgent(message);
-  return res.json(result);
+  return res.json(await agentService.runSearchAgent(readMessage(req)));
 }
 
 module.exports = { chat, chatGuest, clearHistory, chatAgent, chatAgentSearch };

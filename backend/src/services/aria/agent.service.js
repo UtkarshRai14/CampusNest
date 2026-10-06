@@ -1,12 +1,8 @@
-
-
-
-
-
-
-
 const listingModel = require('../../models/listing.model');
-const mlService = require('../../services/mlService');
+const mlService = require('../mlService');
+
+// This agent is rule-based: regular expressions and keyword lists pull details out of the
+// message, the ML service estimates a price and spam risk, and the user confirms the draft.
 
 const CATEGORY_KEYWORDS = {
   Books: ['book', 'textbook', 'novel', 'guide'],
@@ -20,19 +16,56 @@ const CATEGORY_KEYWORDS = {
   Electronics: ['charger', 'cable', 'heater', 'extension board', 'adapter'],
 };
 
-function guessCategory(text) {
-  const textLower = text.toLowerCase();
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => textLower.includes(kw))) {
-      return category;
-    }
-  }
-  return 'Other';
+const LISTING_TYPE_KEYWORDS = {
+  sell: ['sell', 'selling', 'sale'],
+  rent: ['rent', 'renting', 'rental'],
+  borrow: ['borrow', 'lend', 'lending'],
+  swap: ['swap', 'exchange', 'trade'],
+};
+
+// The price model has no "Other" category, so no estimate can be made for it.
+const UNKNOWN_CATEGORY = 'Other';
+const DEFAULT_MONTHS_USED = 6;
+
+function containsWord(text, word) {
+  return new RegExp(`\\b${word}s?\\b`, 'i').test(text);
 }
 
+function guessCategory(text) {
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((kw) => containsWord(text, kw))) return category;
+  }
+  return UNKNOWN_CATEGORY;
+}
+
+function guessListingType(text) {
+  for (const [type, keywords] of Object.entries(LISTING_TYPE_KEYWORDS)) {
+    if (keywords.some((kw) => containsWord(text, kw))) return type;
+  }
+  return 'sell';
+}
+
+function toAmount(raw) {
+  return parseFloat(raw.replace(/,/g, ''));
+}
+
+// The number in the message is used as the item's original purchase price, because that is
+// what the price model needs. Prefers "bought for 1500" / "₹1500" over a bare number.
 function extractPrice(text) {
-  const match = text.match(/₹?\s?(\d{2,6})/);
-  return match ? parseFloat(match[1]) : null;
+  const marked = text.match(/(?:bought|purchased|original(?:\s+price)?|mrp)\D{0,15}?(\d[\d,]{1,6})/i)
+    || text.match(/(?:₹|rs\.?\s?|inr\s?)(\d[\d,]{1,6})/i)
+    || text.match(/(\d[\d,]{1,6})\s?(?:rs\b|rupees?|₹)/i);
+  if (marked) return toAmount(marked[1]);
+
+  const bare = text.match(/(?<![\w-])(\d{2,6})(?![\w-])(?!\s*(?:months?|mos?|years?|yrs?)\b)/i);
+  return bare ? toAmount(bare[1]) : null;
+}
+
+function extractMonthsUsed(text) {
+  const months = text.match(/(\d{1,3})\s*(?:months?|mos?)\b/i);
+  if (months) return parseInt(months[1], 10);
+  const years = text.match(/(\d{1,2})\s*(?:years?|yrs?)\b/i);
+  return years ? parseInt(years[1], 10) * 12 : null;
 }
 
 function extractCondition(text) {
@@ -45,54 +78,90 @@ function extractCondition(text) {
   return 3;
 }
 
-
-function pythonCapitalize(s) {
-  if (!s) return s;
-  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+// "sell my calculator, good condition, bought for 1500" -> "Calculator"
+function buildTitle(message) {
+  const item = message
+    .replace(/^\s*(?:i\s+(?:want|wanna|would like)\s+to\s+|please\s+)?(?:sell(?:ing)?|rent(?:ing)?(?:\s+out)?|lend(?:ing)?|borrow(?:ing)?|swap(?:ping)?|exchange|trade)\s+(?:my\s+|a\s+|an\s+|the\s+)?/i, '')
+    .split(/[,.;]|\s(?:for|at|bought|purchased|in|used)\s/i)[0]
+    .trim();
+  const title = (item || message.trim()).slice(0, 60);
+  return title.charAt(0).toUpperCase() + title.slice(1);
 }
+
+const formatRange = (lower, upper) => `₹${Math.round(lower)}–₹${Math.round(upper)}`;
 
 async function runListingAgent(userMessage) {
   const category = guessCategory(userMessage);
-  const statedPrice = extractPrice(userMessage);
+  const listingType = guessListingType(userMessage);
   const condition = extractCondition(userMessage);
+  const originalPrice = extractPrice(userMessage);
+  const statedMonths = extractMonthsUsed(userMessage);
+  const monthsUsed = statedMonths !== null ? statedMonths : DEFAULT_MONTHS_USED;
 
-  const basePrice = statedPrice !== null ? statedPrice : 200.0;
+  const steps = [
+    `🔍 Step 1 — Detected: category ${category}, type ${listingType}, condition ${condition}/5`,
+  ];
+
+  if (category === UNKNOWN_CATEGORY || originalPrice === null) {
+    steps.push('⏸️ Step 2 — Price model skipped, not enough information');
+    return {
+      agent_steps: steps,
+      draft: null,
+      spam_check: null,
+      summary: category === UNKNOWN_CATEGORY
+        ? "I couldn't tell which category this item belongs to, so I can't estimate a price. Mention what it is (for example calculator, laptop or book) and its original price."
+        : "I need the item's original price to estimate a fair price. Try something like: sell my calculator, good condition, bought for 1500 rupees.",
+    };
+  }
 
   const priceResult = await mlService.predictPrice({
     category,
-    originalPrice: basePrice,
+    originalPrice,
     condition,
-    monthsUsed: 6,
+    monthsUsed,
     demandScore: 0.5,
   });
-
   const spamResult = await mlService.isSpam(userMessage, '');
+  const suggestedPrice = Math.round(priceResult.predicted_price);
 
-  const draftTitle = pythonCapitalize(userMessage.trim()).slice(0, 60);
+  const monthsNote = statedMonths !== null ? `${monthsUsed} months used` : `assumed ${monthsUsed} months used`;
+  steps.push(
+    `🤖 Step 2 — ML price model (original price ₹${originalPrice}, ${monthsNote}) → estimate ₹${suggestedPrice}`,
+    `🛡️ Step 3 — Spam check → ${spamResult.is_spam ? '⚠️ flagged' : '✅ not flagged'}`
+  );
 
-  const stepsTaken = [
-    `🔍 Step 1 — Detected category: **${category}**`,
-    `🤖 Step 2 — Ran ML price model → suggested ₹${priceResult.predicted_price}`,
-    `🛡️ Step 3 — Ran spam detector → ${spamResult.is_spam ? '⚠️ flagged' : '✅ looks safe'}`,
-    '📝 Step 4 — Draft ready for your review',
-  ];
+  if (spamResult.is_spam) {
+    return {
+      agent_steps: steps,
+      draft: null,
+      spam_check: spamResult,
+      summary: 'This looks like spam, so I did not create a draft. Please rephrase your request.',
+    };
+  }
+
+  steps.push('📝 Step 4 — Draft ready for your review');
+  const title = buildTitle(userMessage);
+  const range = formatRange(priceResult.lower_bound, priceResult.upper_bound);
+  const priceNote = listingType === 'sell'
+    ? ''
+    : ' This is an estimated resale value, so adjust the price for a rent, borrow or swap listing after posting (Profile → My Listings → Edit).';
 
   return {
-    agent_steps: stepsTaken,
+    agent_steps: steps,
     draft: {
-      title: draftTitle,
+      title,
       category,
       condition,
-      listing_type: 'sell',
-      suggested_price: priceResult.predicted_price,
-      price_range: `₹${priceResult.lower_bound}–₹${priceResult.upper_bound}`,
+      listing_type: listingType,
+      original_price: originalPrice,
+      months_used: monthsUsed,
+      suggested_price: suggestedPrice,
+      price_range: range,
     },
     spam_check: spamResult,
     summary:
-      `I drafted a listing for **${draftTitle}** in **${category}** ` +
-      `at **₹${priceResult.predicted_price}** ` +
-      `(fair range ₹${priceResult.lower_bound}–₹${priceResult.upper_bound}). ` +
-      `${spamResult.is_spam ? '⚠️ This looks like spam, please rephrase.' : 'Looks good — confirm to post it!'}`,
+      `I drafted a ${listingType} listing for "${title}" in ${category} at ₹${suggestedPrice} ` +
+      `(estimated range ${range}). Confirm to post it.${priceNote}`,
   };
 }
 
@@ -119,16 +188,11 @@ async function runSearchAgent(userMessage) {
   const maxPrice = extractMaxPrice(userMessage);
   const minCondition = extractMinCondition(userMessage);
 
-  
-  
-  
-  
-  
   const allActive = await listingModel.findAllActive();
 
   function applyFilters(listings, { useCategory, useCondition }) {
     return listings.filter((l) => {
-      if (useCategory && category !== 'Other' && l.category !== category) return false;
+      if (useCategory && category !== UNKNOWN_CATEGORY && l.category !== category) return false;
       if (maxPrice && l.price > maxPrice) return false;
       if (useCondition && minCondition > 1 && l.condition < minCondition) return false;
       return true;
@@ -148,14 +212,14 @@ async function runSearchAgent(userMessage) {
     .sort(sortByConditionThenRecency)
     .slice(0, 5);
 
-  if (results.length === 0 && category !== 'Other') {
+  if (results.length === 0 && category !== UNKNOWN_CATEGORY) {
     results = applyFilters(allActive, { useCategory: false, useCondition: false })
       .sort(sortByRecency)
       .slice(0, 5);
   }
 
   const stepsTaken = [
-    `🔍 Step 1 — Detected: category=**${category}**, max_price=**${maxPrice ? `₹${Math.trunc(maxPrice)}` : 'any'}**, min_condition=**${minCondition}/5**`,
+    `🔍 Step 1 — Detected: category ${category}, max price ${maxPrice ? `₹${Math.trunc(maxPrice)}` : 'any'}, min condition ${minCondition}/5`,
     '🗂️ Step 2 — Queried live listings database',
     `📊 Step 3 — Ranked ${results.length} result(s) by condition + recency`,
     '💬 Step 4 — Summary ready',
@@ -175,8 +239,8 @@ async function runSearchAgent(userMessage) {
   if (matches.length > 0) {
     const top = matches[0];
     summary =
-      `I found **${matches.length}** matching listing(s). ` +
-      `Best match: **${top.title}** at **₹${top.price}** ` +
+      `I found ${matches.length} matching listing(s). ` +
+      `Best match: ${top.title} at ₹${top.price} ` +
       `(condition ${top.condition}/5).`;
   } else {
     summary = "I couldn't find any listings matching that exact request — try widening your price range or browsing all categories.";
@@ -189,12 +253,4 @@ async function runSearchAgent(userMessage) {
   };
 }
 
-module.exports = {
-  guessCategory,
-  extractPrice,
-  extractCondition,
-  extractMaxPrice,
-  extractMinCondition,
-  runListingAgent,
-  runSearchAgent,
-};
+module.exports = { runListingAgent, runSearchAgent };

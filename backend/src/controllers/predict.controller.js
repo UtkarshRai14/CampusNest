@@ -1,40 +1,18 @@
 const mlService = require('../services/mlService');
-const HttpError = require('../utils/HttpError');
+const { parseNumber, parseCondition, parseText, isMissing } = require('../utils/validators');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const formatRupees = (amount) => `₹${Math.round(amount).toLocaleString('en-IN')}`;
 
 async function getPricePrediction(req, res) {
-  const { category, original_price: originalPrice, condition, months_used: monthsUsed, demand_score: demandScoreRaw } = req.body || {};
+  const body = req.body || {};
 
-  if (category === undefined || originalPrice === undefined || condition === undefined || monthsUsed === undefined) {
-    throw new HttpError(422, [{ msg: 'category, original_price, condition and months_used are required' }]);
-  }
-
-  const demandScore = demandScoreRaw !== undefined ? demandScoreRaw : 0.5;
-
-  if (condition < 1 || condition > 5) {
-    throw new HttpError(400, 'Condition must be between 1 and 5');
-  }
-  if (originalPrice <= 0) {
-    throw new HttpError(400, 'Original price must be greater than 0');
-  }
-  if (monthsUsed < 0) {
-    throw new HttpError(400, 'Months used cannot be negative');
-  }
+  const category = parseText(body.category, 'Category', { max: 100 });
+  const originalPrice = parseNumber(body.original_price, 'Original price', { positive: true });
+  const condition = parseCondition(body.condition);
+  const monthsUsed = parseNumber(body.months_used, 'Months used', { integer: true, min: 0 });
+  const demandScore = isMissing(body.demand_score)
+    ? 0.5
+    : parseNumber(body.demand_score, 'Demand score', { min: 0, max: 1 });
 
   const result = await mlService.predictPrice({
     category, originalPrice, condition, monthsUsed, demandScore,
@@ -48,7 +26,7 @@ async function getPricePrediction(req, res) {
     predicted_price: result.predicted_price,
     lower_bound: result.lower_bound,
     upper_bound: result.upper_bound,
-    price_range: `₹${result.lower_bound.toLocaleString('en-US')} — ₹${result.upper_bound.toLocaleString('en-US')}`,
+    price_range: `${formatRupees(result.lower_bound)} — ${formatRupees(result.upper_bound)}`,
     chart: result.chart,
   });
 }

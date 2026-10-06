@@ -2,7 +2,8 @@ const listingModel = require('../models/listing.model');
 const userModel = require('../models/user.model');
 const recommenderService = require('../services/recommender.service');
 const svgChart = require('../utils/svgChart');
-
+const HttpError = require('../utils/HttpError');
+const { parseId } = require('../utils/validators');
 
 async function getTrending(req, res) {
   const results = await listingModel.countByCategory();
@@ -18,23 +19,6 @@ async function getTrending(req, res) {
     chart: svgChart.generateTrendingChart(categories, counts),
   });
 }
-
-
-async function getDemand(req, res) {
-  const results = await listingModel.countByDepartment();
-  if (results.length === 0) {
-    return res.json({ message: 'No data yet', chart: null, data: [] });
-  }
-
-  const departments = results.map((r) => r.department_tag);
-  const counts = results.map((r) => r.count);
-
-  return res.json({
-    data: results.map((r) => ({ department: r.department_tag, count: r.count })),
-    chart: svgChart.generateDemandChart(departments, counts),
-  });
-}
-
 
 async function getSummary(req, res) {
   const [totalListings, totalUsers, totalCategories, avgPrice] = await Promise.all([
@@ -52,9 +36,11 @@ async function getSummary(req, res) {
   });
 }
 
-
 async function getUserRecommendations(req, res) {
-  const userId = parseInt(req.params.userId, 10);
+  const userId = parseId(req.params.userId, 'User id');
+  if (userId !== req.user.id) {
+    throw new HttpError(403, 'You can only view your own recommendations');
+  }
   const recommendations = await recommenderService.getRecommendations(userId);
   return res.json({
     user_id: userId,
@@ -63,4 +49,4 @@ async function getUserRecommendations(req, res) {
   });
 }
 
-module.exports = { getTrending, getDemand, getSummary, getUserRecommendations };
+module.exports = { getTrending, getSummary, getUserRecommendations };
