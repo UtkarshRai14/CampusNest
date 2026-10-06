@@ -4,6 +4,9 @@
   "description": "CampusNest Express/PostgreSQL backend (migrated from FastAPI)",
   "type": "commonjs",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",

@@ -18,7 +18,7 @@ const adminRoutes = require('./routes/admin.routes');
 const app = express();
 
 app.use(cors({
-  origin: env.clientUrl,
+  origin: env.clientUrls,
   credentials: true,
 }));
 
@@ -29,6 +29,10 @@ app.get('/', (req, res) => {
     message: 'Welcome to CampusNest API',
     version: '1.0.0',
   });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'campusnest-api' });
 });
 
 app.use('/users', usersRoutes);
@@ -58,6 +62,12 @@ async function start() {
   server.listen(env.port, () => {
     console.log(`CampusNest API (Express) listening on port ${env.port}`);
   });
+
+  // A sleeping ML service (free hosting) takes a while to start, so wake it now
+  // instead of on the first price or spam request.
+  fetch(`${env.mlServiceUrl}/health`, { signal: AbortSignal.timeout(90000) })
+    .then(() => console.log('[startup] ML service is reachable.'))
+    .catch((err) => console.warn('[startup] ML service is not reachable yet:', err.message));
 }
 
 start();

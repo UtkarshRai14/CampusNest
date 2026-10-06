@@ -2,7 +2,11 @@ require('dotenv').config();
 
 const env = {
   port: parseInt(process.env.PORT || '8000', 10),
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // Comma-separated, so the deployed frontend and local development can both be allowed.
+  clientUrls: (process.env.CLIENT_URL || 'http://localhost:5173')
+    .split(',')
+    .map((url) => url.trim().replace(/\/+$/, ''))
+    .filter(Boolean),
 
   databaseUrl: process.env.DATABASE_URL || '',
 

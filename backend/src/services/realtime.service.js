@@ -13,7 +13,7 @@ const userRoom = (userId) => `user:${userId}`;
 // Clients only listen. Changes still go through the REST API, which pushes the result here.
 function initRealtime(httpServer) {
   io = new Server(httpServer, {
-    cors: { origin: env.clientUrl, credentials: true },
+    cors: { origin: env.clientUrls, credentials: true },
   });
 
   // The client connects with the same JWT it sends to the REST API.
