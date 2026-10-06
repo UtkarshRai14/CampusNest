@@ -1,28 +1,7 @@
 const pool = require('./pool');
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Schema is created with CREATE TABLE IF NOT EXISTS and evolved with idempotent
+// ALTER statements, so it is safe to run on every startup (fresh or existing DB).
 async function initDb() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -38,13 +17,13 @@ async function initDb() {
       created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc')
     );
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);`);
 
-  
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS enrollment_no VARCHAR;`);
+  // No two accounts share an enrollment number; case is ignored ("21cs001" = "21CS001").
+  // Registration requires one, but accounts created before that may still have none.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_enrollment_no_key ON users (UPPER(enrollment_no));`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR;`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS availability VARCHAR DEFAULT 'Available after 7 PM';`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_reply VARCHAR DEFAULT 'Thanks for your interest! I will get back to you after 7 PM today. \u{1F64F}';`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS listings (
@@ -65,23 +44,35 @@ async function initDb() {
       created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc')
     );
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS ix_listings_id ON listings (id);`);
 
-  
-  
-  
-  
-  
-  
   await pool.query(`
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
       sender_id INTEGER REFERENCES users(id),
       listing_id INTEGER REFERENCES listings(id),
-      receiver_id INTEGER NOT NULL,
+      receiver_id INTEGER NOT NULL REFERENCES users(id),
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc')
     );
+  `);
+
+  // Databases created before read-tracking: existing messages count as already read,
+  // only messages created from now on start as unread.
+  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE messages ALTER COLUMN is_read SET DEFAULT FALSE;`);
+
+  // Databases created before receiver_id was a real reference. NOT VALID enforces the
+  // constraint for new rows without failing on any old orphaned rows.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messages_receiver_id_fkey') THEN
+        ALTER TABLE messages
+          ADD CONSTRAINT messages_receiver_id_fkey
+          FOREIGN KEY (receiver_id) REFERENCES users(id) NOT VALID;
+      END IF;
+    END $$;
   `);
 
   await pool.query(`
@@ -94,7 +85,6 @@ async function initDb() {
     );
   `);
 
-  
   console.log('[db] Schema is up to date.');
 }
 

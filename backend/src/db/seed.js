@@ -1,25 +1,29 @@
-
-
-
-
-
-
-
-
-
 const pool = require('./pool');
 const { initDb } = require('./init');
 const { hashPassword } = require('../services/auth.service');
 
+const DEMO_PASSWORD = 'demo1234';
+
+// The only admin account. Admin rights come from users.is_admin in the database;
+// registering through the app can never create an admin.
+const adminUser = {
+  name: 'CampusNest Admin',
+  email: 'admin@campusnest.com',
+  department: 'B.Tech Computer Science and Engineering',
+  school: 'IIIT Sonepat',
+  semester: 1,
+  enrollment_no: 'DEMO-ADMIN',
+};
+
 const demoUsers = [
-  { name: 'Arjun Sharma', email: 'arjun@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 5 },
-  { name: 'Priya Verma', email: 'priya@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 3 },
-  { name: 'Rahul Patel', email: 'rahul@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 7 },
-  { name: 'Kavya Singh', email: 'kavya@iiitsonepat.ac.in', department: 'B.Tech CSE (Data Science and Analytics)', school: 'IIIT Sonepat', semester: 4 },
-  { name: 'Mohit Gupta', email: 'mohit@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 6 },
-  { name: 'Ananya Joshi', email: 'ananya@iiitsonepat.ac.in', department: 'Ph.D', school: 'IIIT Sonepat', semester: 2 },
-  { name: 'Vikram Yadav', email: 'vikram@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 5 },
-  { name: 'Sneha Mishra', email: 'sneha2@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 3 },
+  { name: 'Arjun Sharma', email: 'arjun@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 5, enrollment_no: 'DEMO-001' },
+  { name: 'Priya Verma', email: 'priya@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 3, enrollment_no: 'DEMO-002' },
+  { name: 'Rahul Patel', email: 'rahul@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 7, enrollment_no: 'DEMO-003' },
+  { name: 'Kavya Singh', email: 'kavya@iiitsonepat.ac.in', department: 'B.Tech CSE (Data Science and Analytics)', school: 'IIIT Sonepat', semester: 4, enrollment_no: 'DEMO-004' },
+  { name: 'Mohit Gupta', email: 'mohit@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 6, enrollment_no: 'DEMO-005' },
+  { name: 'Ananya Joshi', email: 'ananya@iiitsonepat.ac.in', department: 'Ph.D', school: 'IIIT Sonepat', semester: 2, enrollment_no: 'DEMO-006' },
+  { name: 'Vikram Yadav', email: 'vikram@iiitsonepat.ac.in', department: 'B.Tech Computer Science and Engineering', school: 'IIIT Sonepat', semester: 5, enrollment_no: 'DEMO-007' },
+  { name: 'Sneha Mishra', email: 'sneha2@iiitsonepat.ac.in', department: 'B.Tech Information Technology', school: 'IIIT Sonepat', semester: 3, enrollment_no: 'DEMO-008' },
 ];
 
 const listingsData = [
@@ -30,7 +34,7 @@ const listingsData = [
   { title: 'Engineering Mathematics — B.S. Grewal', description: 'Engineering Mathematics by B.S. Grewal. Covers the full B.Tech syllabus for Sem 1 and 2. Some chapters have highlighted text. Great condition overall. Best book for engineering maths.', price: 130, condition: 4, category: 'Books', listing_type: 'sell', seller_idx: 0, image_url: 'https://easy2learning.in/static/uploads/books/WhatsApp_Image_2025-06-12_at_15.56.26.jpeg' },
   { title: 'Foldable Clothes Drying Stand with Wheels', description: 'Premium foldable clothes drying stand with wheels. Multiple bars, foldable wings. Easy to move and store. Holds 15-20 clothes. Perfect for hostel room. Selling as going home.', price: 300, condition: 4, category: 'Hostel Items', listing_type: 'sell', seller_idx: 7, image_url: 'https://rukminim2.flixcart.com/image/480/640/xif0q/cloth-dryer-stand/h/b/a/15-premium-clothes-stand-for-drying-with-wheels-foldable-wings-original-imagwyhfkpthhfps.jpeg?q=20' },
   { title: 'Sandwich Maker — 2 Slice Non Stick Grill', description: 'Non-stick sandwich maker, makes 2 sandwiches at once. Ready in 3 minutes. Perfect for hostel breakfast. No oil needed. Clean and working perfectly. Selling as going home for vacation.', price: 450, condition: 4, category: 'Hostel Items', listing_type: 'sell', seller_idx: 5, image_url: 'https://encrypted-tbn3.gstatic.com/shopping?q=tbn:ANd9GcRKJ1kw6iOtC83VnupGVm71bCvJzlOtTHmr2i0PR1bYt4ovzgm8xh9fDQb0DWYa6JF9JdYUtosePPjhmdWw8sjDIgzbPtUiD56UAQ5a77Icouwbs8nb_nqd7p2Y96Of-CYUxvUrkA&usqp=CAc' },
-  { title: 'Casio fx-991ES PLUS — Borrow for Exam (₹600/day)', description: 'Borrow my Casio fx-991ES PLUS scientific calculator for ₹600/day. All 417 functions working. Exam-hall approved. ⚠️ Terms: Any damage or loss during borrowing must be repaired or compensated fully by the borrower.', price: 100, condition: 5, category: 'Calculator', listing_type: 'borrow', seller_idx: 2, image_url: 'https://encrypted-tbn3.gstatic.com/shopping?q=tbn:ANd9GcR0OAdNkqt0-lIXvcsnPpfF1J03WNZbTgejCXsKj1xjK4oZvZ9EJ17-neuqV3U_YIM5rKDJpvYQ9aRtiGKTR65hBrLSzqWsMkMLsvVmrhYxHXR_DgmtDfWcTh8VysonrToS-e5QxvcQsh4&usqp=CAc' },
+  { title: 'Casio fx-991ES PLUS — Borrow for Exam (₹600/day)', description: 'Borrow my Casio fx-991ES PLUS scientific calculator for ₹600/day. All 417 functions working. Exam-hall approved. ⚠️ Terms: Any damage or loss during borrowing must be repaired or compensated fully by the borrower.', price: 600, condition: 5, category: 'Calculator', listing_type: 'borrow', seller_idx: 2, image_url: 'https://encrypted-tbn3.gstatic.com/shopping?q=tbn:ANd9GcR0OAdNkqt0-lIXvcsnPpfF1J03WNZbTgejCXsKj1xjK4oZvZ9EJ17-neuqV3U_YIM5rKDJpvYQ9aRtiGKTR65hBrLSzqWsMkMLsvVmrhYxHXR_DgmtDfWcTh8VysonrToS-e5QxvcQsh4&usqp=CAc' },
   { title: 'Complete Drafter Set — Mini Drafter + Instruments', description: 'Full engineering drawing set with mini drafter, compass, set squares, protractor and scales. Used for 1 semester. All pieces intact. Useful for engineering drawing coursework and project diagrams.', price: 500, condition: 4, category: 'Drawing Instruments', listing_type: 'sell', seller_idx: 6, image_url: 'https://encrypted-tbn1.gstatic.com/shopping?q=tbn:ANd9GcQx5PH4_GkSrzWySAhiIyjQsw_ti7xqt60Hdm3byXgc00WPY1RflIr9z62teAUvUHa4xXlmXa2b-BNsdQVZAA8XsQYgWI7jLRLwimf2VOfbUzZiaiCNw6dwJaEgJrsPCiCAJqXR1PxfDZI&usqp=CAc' },
   { title: 'C-Type to USB-A Cable — 1 Metre Fast Charge', description: '1 metre USB-C to USB-A braided cable. Supports fast charging upto 18W. Compatible with all Android phones. No fraying. Selling as I bought a wireless charger.', price: 300, condition: 5, category: 'Electronics', listing_type: 'sell', seller_idx: 3, image_url: 'https://encrypted-tbn1.gstatic.com/shopping?q=tbn:ANd9GcSpU-BdgYDUKBk19Bs4JiD8_RgJIGEvhehaq42fC_jma1Sbj-GsiroNjwqdY3ImYMOewocSLTwqG_8RSTPuBqPLpg6swsHEMCPF_5Yz2FY_&usqp=CAc' },
   { title: 'Laptop — Borrow for Project or Presentation (₹200/day)', description: 'Borrow my laptop for ₹200/day. Windows 11, i5, 8GB RAM, SSD. Perfect for project demos, presentations, or when your laptop is under repair. ⚠️ Terms & Conditions: Any damage or hardware issue caused during borrowing period must be fully repaired by the borrower at their own expense.', price: 200, condition: 5, category: 'Laptop', listing_type: 'borrow', seller_idx: 0, image_url: 'https://i5.walmartimages.com/seo/HP-15-6-Ryzen-5-8GB-256GB-Laptop-Rose-Gold_36809cf3-480b-47a5-94f0-e1d5e70c58c0_3.fcc0d6494b0e279a13c32c80c28abfa3.jpeg' },
@@ -44,43 +48,49 @@ const listingsData = [
   { title: 'Immersion Water Heater Rod — 500W', description: '500W immersion water heater rod. Heats a bucket of water in 10 minutes. Essential for cold hostel winters! Safe with insulated handle. Selling as my room got a geyser installed.', price: 230, condition: 4, category: 'Hostel Items', listing_type: 'sell', seller_idx: 3, image_url: 'https://5.imimg.com/data5/SELLER/Default/2022/7/IN/MT/SO/110052248/immersion-rod-heater-500x500.jpg' },
 ];
 
+async function findOrCreateUser(u) {
+  const { rows: existing } = await pool.query('SELECT * FROM users WHERE email = $1', [u.email]);
+  if (existing.length > 0) return existing[0];
+
+  const { rows } = await pool.query(
+    `INSERT INTO users (name, email, password, department, school, semester, enrollment_no)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [u.name, u.email, hashPassword(DEMO_PASSWORD), u.department, u.school, u.semester, u.enrollment_no]
+  );
+  return rows[0];
+}
+
+// Safe to run repeatedly: existing users and listings are left untouched.
 async function seed() {
   await initDb();
 
-  await pool.query('DELETE FROM listings');
-  console.log('🗑️ Cleared old listings');
+  const admin = await findOrCreateUser(adminUser);
+  await pool.query('UPDATE users SET is_admin = TRUE WHERE id = $1', [admin.id]);
+  console.log(`✅ Admin account ready: ${adminUser.email}`);
 
   const createdUsers = [];
   for (const u of demoUsers) {
-    const { rows: existingRows } = await pool.query('SELECT * FROM users WHERE email = $1', [u.email]);
-    if (existingRows.length > 0) {
-      createdUsers.push(existingRows[0]);
-      continue;
-    }
-    const { rows } = await pool.query(
-      `INSERT INTO users (name, email, password, department, school, semester)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [u.name, u.email, hashPassword('demo1234'), u.department, u.school, u.semester]
-    );
-    createdUsers.push(rows[0]);
+    createdUsers.push(await findOrCreateUser(u));
   }
   console.log(`✅ ${createdUsers.length} demo users ready`);
 
-  let count = 0;
+  let created = 0;
   for (const l of listingsData) {
     const seller = createdUsers[l.seller_idx];
-    await pool.query(
+    const { rowCount } = await pool.query(
       `INSERT INTO listings
         (title, description, price, condition, category, listing_type,
          department_tag, semester_tag, image_url, seller_id, is_active, is_flagged)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,$8,$9,TRUE,FALSE)`,
+       SELECT $1::varchar, $2::text, $3::double precision, $4::int, $5::varchar, $6::varchar,
+              $7::varchar, $8::int, $9::varchar, $10::int, TRUE, FALSE
+       WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = $1::varchar AND seller_id = $10::int)`,
       [l.title, l.description, l.price, l.condition, l.category, l.listing_type,
-        seller.department, l.image_url, seller.id]
+        seller.department, seller.semester, l.image_url, seller.id]
     );
-    count += 1;
+    created += rowCount;
   }
-  console.log(`✅ ${count} real listings created with your images!`);
-  console.log('🔑 Demo user password: demo1234');
+  console.log(`✅ ${created} listings added (${listingsData.length - created} already existed)`);
+  console.log(`🔑 Demo password for all seeded accounts: ${DEMO_PASSWORD} (local development only)`);
 
   await pool.end();
 }

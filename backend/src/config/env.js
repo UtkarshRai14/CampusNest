@@ -1,9 +1,5 @@
 require('dotenv').config();
 
-
-
-
-
 const env = {
   port: parseInt(process.env.PORT || '8000', 10),
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
@@ -23,8 +19,16 @@ const env = {
   mlServiceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8001',
 };
 
+// The development default is public, so tokens signed with it can be forged.
+if (!process.env.SECRET_KEY) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[config] SECRET_KEY must be set in production.');
+    process.exit(1);
+  }
+  console.warn('[config] SECRET_KEY is not set - using an insecure development default. Set it in .env.');
+}
+
 if (!env.databaseUrl) {
-  
   console.warn('[config] DATABASE_URL is not set - database connections will fail.');
 }
 
