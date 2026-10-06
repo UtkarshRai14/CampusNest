@@ -1,7 +1,9 @@
 const messageModel = require('../models/message.model');
 const userModel = require('../models/user.model');
 const listingModel = require('../models/listing.model');
+const realtime = require('../services/realtime.service');
 const HttpError = require('../utils/HttpError');
+const { parseText, parseId } = require('../utils/validators');
 
 function messageToDict(msg) {
   return {
@@ -15,44 +17,65 @@ function messageToDict(msg) {
   };
 }
 
+function buildAutoReply(buyer, seller, listing) {
+  let text = `Hi ${buyer.name}! 👋 Thanks for your interest in "${listing.title}".\n\n`;
+  text += `📧 Email: ${seller.email}\n`;
+  if (seller.whatsapp) text += `📱 WhatsApp: +91 ${seller.whatsapp}\n`;
+  text += '\nFeel free to ask anything! 🙏\n(This is an automatic reply.)';
+  return text;
+}
+
+// A listing conversation has exactly two people: the listing's seller and one buyer.
+// The buyer starts it; the seller can reply only to a buyer who has already written to them.
+async function assertCanMessage(listing, senderId, receiverId) {
+  if (senderId === receiverId) throw new HttpError(400, 'Cannot message yourself');
+
+  const receiver = await userModel.findById(receiverId);
+  if (!receiver) throw new HttpError(404, 'Recipient not found');
+
+  const senderIsSeller = listing.seller_id === senderId;
+  if (senderIsSeller) {
+    const buyerHasWritten = await messageModel.countFrom(listing.id, receiverId, senderId);
+    if (buyerHasWritten === 0) {
+      throw new HttpError(403, 'You can only reply to users who have messaged you about this listing');
+    }
+  } else if (receiverId !== listing.seller_id) {
+    throw new HttpError(403, 'Messages about a listing can only be sent to its seller');
+  }
+  return { senderIsSeller };
+}
 
 async function sendMessage(req, res) {
-  const { content, listing_id: listingId, receiver_id: receiverId } = req.body || {};
-  if (!content || listingId === undefined || receiverId === undefined) {
-    throw new HttpError(422, [{ msg: 'content, listing_id and receiver_id are required' }]);
-  }
+  const body = req.body || {};
+  const content = parseText(body.content, 'Message', { max: 2000 });
+  const listingId = parseId(body.listing_id, 'Listing id');
+  const receiverId = parseId(body.receiver_id, 'Receiver id');
 
   const listing = await listingModel.findByIdAny(listingId);
   if (!listing) throw new HttpError(404, 'Listing not found');
-  if (listing.seller_id === req.user.id) throw new HttpError(400, 'Cannot message yourself');
 
-  const newMessage = await messageModel.create({
+  const { senderIsSeller } = await assertCanMessage(listing, req.user.id, receiverId);
+  const isFirstContact = !senderIsSeller
+    && (await messageModel.countBetween(listingId, req.user.id, receiverId)) === 0;
+
+  const newMessage = messageToDict(await messageModel.create({
     content, senderId: req.user.id, listingId, receiverId,
-  });
+  }));
+  await realtime.notifyNewMessage(newMessage);
 
-  const existingCount = await messageModel.countBetween(listingId, req.user.id, receiverId);
-
-  if (existingCount <= 1) {
+  if (isFirstContact) {
     const seller = await userModel.findById(receiverId);
-    if (seller) {
-      const availability = seller.availability || 'after 7 PM';
-      const whatsapp = seller.whatsapp || null;
-
-      let autoText = `Hi ${req.user.name}! 👋 Thanks for your interest.\n\n`;
-      autoText += `🕐 I am usually available ${availability}.\n`;
-      autoText += `📧 Email: ${seller.email}\n`;
-      if (whatsapp) autoText += `📱 WhatsApp: ${whatsapp}\n`;
-      autoText += '\nFeel free to ask anything! 🙏';
-
-      await messageModel.create({
-        content: autoText, senderId: receiverId, listingId, receiverId: req.user.id,
-      });
-    }
+    const autoReply = await messageModel.create({
+      content: buildAutoReply(req.user, seller, listing),
+      senderId: receiverId,
+      listingId,
+      receiverId: req.user.id,
+    });
+    await realtime.notifyNewMessage(messageToDict(autoReply));
   }
 
-  return res.json(messageToDict(newMessage));
+  return res.json(newMessage);
 }
-
 
 async function getConversations(req, res) {
   const messages = await messageModel.findAllForUser(req.user.id);
@@ -84,42 +107,68 @@ async function getConversations(req, res) {
         other_user_whatsapp: otherUser ? (otherUser.whatsapp || null) : null,
         listing_id: msg.listing_id,
         listing_title: listing ? listing.title : 'Unknown',
+        listing_seller_id: listing ? listing.seller_id : null,
         listing_image: listing ? listing.image_url : null,
         last_message: msg.content,
         last_message_time: msg.created_at,
+        unread_count: 0,
       });
-    } else {
-      const conv = conversations.get(key);
-      if (new Date(msg.created_at) > new Date(conv.last_message_time)) {
-        conv.last_message = msg.content;
-        conv.last_message_time = msg.created_at;
-      }
     }
+
+    const conv = conversations.get(key);
+    // Messages arrive oldest-first, so the last one seen is the latest.
+    conv.last_message = msg.content;
+    conv.last_message_time = msg.created_at;
+    if (msg.receiver_id === req.user.id && !msg.is_read) conv.unread_count += 1;
   }
 
-  return res.json({ conversations: Array.from(conversations.values()) });
+  const sorted = Array.from(conversations.values())
+    .sort((a, b) => new Date(b.last_message_time) - new Date(a.last_message_time));
+  return res.json({ conversations: sorted });
 }
-
 
 async function getUnreadCount(req, res) {
-  const count = await messageModel.countReceived(req.user.id);
-  return res.json({ unread_count: Math.min(count, 99) });
+  return res.json({ unread_count: await realtime.getUnreadCount(req.user.id) });
 }
 
+// Marks the messages the reader received in a conversation as read and updates their badge.
+async function markRead(listingId, readerId, otherUserId) {
+  const marked = await messageModel.markConversationRead(listingId, readerId, otherUserId);
+  if (marked > 0) await realtime.notifyRead(readerId);
+}
 
+// Opening a conversation marks the messages you received in it as read.
 async function getMessages(req, res) {
-  const listingId = parseInt(req.params.listingId, 10);
-  const otherUserId = parseInt(req.params.otherUserId, 10);
+  const listingId = parseId(req.params.listingId, 'Listing id');
+  const otherUserId = parseId(req.params.otherUserId, 'User id');
+
+  await markRead(listingId, req.user.id, otherUserId);
   const messages = await messageModel.findConversation(listingId, req.user.id, otherUserId);
   return res.json(messages.map(messageToDict));
 }
 
+// Called when a message arrives in a conversation the user already has open.
+async function markConversationRead(req, res) {
+  const listingId = parseId(req.params.listingId, 'Listing id');
+  const otherUserId = parseId(req.params.otherUserId, 'User id');
 
-async function deleteConversation(req, res) {
-  const listingId = parseInt(req.params.listingId, 10);
-  const otherUserId = parseInt(req.params.otherUserId, 10);
-  await messageModel.deleteConversation(listingId, req.user.id, otherUserId);
-  return res.json({ message: 'Deleted' });
+  await markRead(listingId, req.user.id, otherUserId);
+  return res.json({ message: 'Conversation marked as read' });
 }
 
-module.exports = { sendMessage, getConversations, getUnreadCount, getMessages, deleteConversation };
+async function deleteConversation(req, res) {
+  const listingId = parseId(req.params.listingId, 'Listing id');
+  const otherUserId = parseId(req.params.otherUserId, 'User id');
+  const deleted = await messageModel.deleteConversation(listingId, req.user.id, otherUserId);
+  await realtime.notifyMessagesDeleted(deleted);
+  return res.json({ message: 'Conversation deleted' });
+}
+
+module.exports = {
+  sendMessage,
+  getConversations,
+  getUnreadCount,
+  getMessages,
+  markConversationRead,
+  deleteConversation,
+};

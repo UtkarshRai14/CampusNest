@@ -1,7 +1,9 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const env = require('./config/env');
 const { initDb } = require('./db/init');
+const { initRealtime } = require('./services/realtime.service');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler.middleware');
 
 const usersRoutes = require('./routes/users.routes');
@@ -15,19 +17,6 @@ const adminRoutes = require('./routes/admin.routes');
 
 const app = express();
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 app.use(cors({
   origin: env.clientUrl,
   credentials: true,
@@ -38,7 +27,6 @@ app.use(express.json());
 app.get('/', (req, res) => {
   res.json({
     message: 'Welcome to CampusNest API',
-    campus: 'IIIT Sonepat',
     version: '1.0.0',
   });
 });
@@ -59,13 +47,15 @@ async function start() {
   try {
     await initDb();
   } catch (err) {
-    
     console.error('[startup] Failed to initialize database schema:', err.message);
     process.exit(1);
   }
 
-  app.listen(env.port, () => {
-    
+  // Socket.IO shares the API's port for live messaging.
+  const server = http.createServer(app);
+  initRealtime(server);
+
+  server.listen(env.port, () => {
     console.log(`CampusNest API (Express) listening on port ${env.port}`);
   });
 }
