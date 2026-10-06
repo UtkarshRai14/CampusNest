@@ -43,6 +43,7 @@ export default function Home() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
   const [listings, setListings] = useState([])
+  const [listingsLoading, setListingsLoading] = useState(true)
   const [listingsError, setListingsError] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
@@ -51,6 +52,7 @@ export default function Home() {
     API.get('/listings/')
       .then(r => setListings(Array.isArray(r.data) ? r.data : []))
       .catch(() => setListingsError(true))
+      .finally(() => setListingsLoading(false))
   }, [])
 
   useEffect(() => {
@@ -276,7 +278,12 @@ export default function Home() {
           </div>
         </FadeIn>
 
-        {filtered.length === 0 ? (
+        {listingsLoading ? (
+          <div style={{ textAlign: 'center', padding: '80px 0', background: '#fff', borderRadius: 24, border: '1px dashed #B2EFE8' }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>⏳</div>
+            <p style={{ color: '#7A9BA8', fontSize: 16 }}>Loading listings...</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <FadeIn>
             <div style={{ textAlign: 'center', padding: '80px 0', background: '#fff', borderRadius: 24, border: '1px dashed #B2EFE8' }}>
               <div style={{ fontSize: 56, marginBottom: 16 }}>{listingsError ? '⚠️' : '📭'}</div>

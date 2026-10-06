@@ -48,7 +48,7 @@ export default function Login() {
     } catch (err) {
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') toast.error(detail)
-      else if (err.message === 'Network Error') toast.error('Backend offline!')
+      else if (err.message === 'Network Error') toast.error('Could not reach the server. Please try again in a minute.')
       else toast.error('Login failed')
     } finally { setLoading(false) }
   }

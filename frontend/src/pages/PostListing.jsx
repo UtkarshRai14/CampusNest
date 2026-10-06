@@ -59,7 +59,11 @@ export default function PostListing() {
       })
       setPriceData(res.data)
       toast.success('Price estimate ready')
-    } catch (err) { toast.error(err.response?.data?.detail || 'Could not get a price estimate') }
+    } catch (err) {
+      // 503: the ML service is asleep (free hosting) and takes about a minute to start.
+      if (err.response?.status === 503) toast.error('The price estimator is starting up. Please try again in about a minute.', { duration: 6000 })
+      else toast.error(err.response?.data?.detail || 'Could not get a price estimate')
+    }
     finally { setPredicting(false) }
   }
 

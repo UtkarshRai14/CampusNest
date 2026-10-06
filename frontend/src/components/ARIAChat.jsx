@@ -72,7 +72,10 @@ export default function ARIAChat() {
       }])
     } catch (err) {
       const detail = err.response?.data?.detail
-      setMessages(prev => [...prev, { role: 'aria', text: typeof detail === 'string' ? `The Listing Assistant could not finish: ${detail}` : 'The Listing Assistant ran into an issue. Please try again.' }])
+      let text = typeof detail === 'string' ? `The Listing Assistant could not finish: ${detail}` : 'The Listing Assistant ran into an issue. Please try again.'
+      // 503: the ML service is asleep (free hosting) and takes about a minute to start.
+      if (err.response?.status === 503) text = 'The ML models behind the Listing Assistant are starting up. Please send your message again in about a minute.'
+      setMessages(prev => [...prev, { role: 'aria', text }])
     } finally {
       setLoading(false)
     }

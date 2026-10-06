@@ -171,7 +171,7 @@ export default function ListingDetail() {
                       <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 500 }}>
                         {listing.spam_checked
                           ? `Spam risk score: ${(listing.spam_score * 100).toFixed(0)}% (automatic check)`
-                          : 'This listing has not been spam-checked'}
+                          : 'The spam checker may still be starting up. Refresh in a minute to see the result.'}
                       </div>
                     </div>
                   </div>
