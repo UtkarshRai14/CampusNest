@@ -82,7 +82,7 @@ The frontend calls `http://127.0.0.1:8000` by default. Set `VITE_API_URL` to cha
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string, e.g. `postgresql://user:password@localhost:5432/campusnest` |
 | `SECRET_KEY` | Secret used to sign JWTs. Set your own long random value. With `NODE_ENV=production` the server will not start without it; in development an insecure built-in default is used and a warning is printed. |
-| `CLIENT_URL` | Frontend origin allowed by CORS (default `http://localhost:5173`) |
+| `CLIENT_URL` | Frontend origins allowed by CORS, comma-separated (default `http://localhost:5173`) |
 | `PORT` | API port (default `8000`) |
 | `ML_SERVICE_URL` | ML service address (default `http://localhost:8001`) |
 | `GEMINI_API_KEY` | Enables ARIA. Without it ARIA answers with generic fallback text. |
@@ -94,6 +94,23 @@ The frontend calls `http://127.0.0.1:8000` by default. Set `VITE_API_URL` to cha
 ### Demo data
 
 `npm run seed` is safe to run more than once. It creates 8 demo students (for example `arjun@iiitsonepat.ac.in`), sample listings, and one admin account, `admin@campusnest.com`. All seeded accounts use the password `demo1234`. This is for local development only.
+
+## Deployment
+
+| Part | Platform (free tier) | URL |
+| --- | --- | --- |
+| Frontend | Vercel, root directory `frontend` | https://campusnest-rose.vercel.app |
+| Backend | Render web service, root directory `backend`, Singapore | https://campusnest-server.onrender.com |
+| ML service | Render web service, root directory `ml-service`, Oregon | https://campusnest-ml.onrender.com |
+| Database | Neon PostgreSQL, Singapore | - |
+
+All three deploy automatically on a push to `main`.
+
+- **Backend**: build `npm ci`, start `npm start`, health check `/health`, `NODE_VERSION=22`, `NODE_ENV=production`. Set the variables from the table above; `CLIENT_URL` is the Vercel URL and `ML_SERVICE_URL` the ML service URL. The schema is created on startup.
+- **Frontend**: `VITE_API_URL` in the Vercel project settings is the backend URL. It is read at build time, so redeploy after changing it.
+- **Database**: Neon's connection string, with `sslmode=verify-full`. The live database was seeded with the demo data; its admin account has its own password, not `demo1234`.
+
+Free Render services sleep after 15 minutes without traffic, so the first request after a quiet period takes about a minute. The backend wakes the ML service when it starts; until that finishes, listings show "Spam check unavailable".
 
 ## How the ML features work
 
