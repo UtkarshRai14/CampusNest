@@ -1,60 +1,42 @@
 """
-CampusNest ML Inference Service
-================================
+CampusNest ML inference service.
 
-This is a standalone Python service that wraps the project's original
-scikit-learn artifacts (price_model.pkl, label_encoder.pkl, spam_model.pkl)
-and the original preprocessing/prediction code from the FastAPI backend's
-`ml/` package, unchanged.
-
-In the original monolith, `predict_price()` and `is_spam()` were plain
-Python functions called in-process from FastAPI route handlers. Now that
-the main backend is Node.js/Express, this service exposes the exact same
-logic over a small internal HTTP API so Express can call it. Nothing about
-the models, preprocessing, feature order, encodings, or outputs has
-changed - only the transport (in-process function call -> HTTP call).
+A small FastAPI app that serves the two scikit-learn models used by the Express
+backend. It is internal: only the backend calls it, never the browser.
 
 Endpoints:
-  GET  /health                - basic liveness/readiness check (new; ops-only)
-  POST /predict/price         - same contract as the original FastAPI
-                                 POST /predict/price route (category,
-                                 original_price, condition, months_used,
-                                 demand_score) -> predicted_price,
-                                 lower_bound, upper_bound, chart
-  POST /predict/spam          - wraps the original is_spam(title, description)
-                                 function, which previously had no public
-                                 HTTP route of its own (it was only called
-                                 in-process from routers/listings.py). This
-                                 endpoint is required so Express can reach
-                                 the same logic across the process boundary.
-  POST /predict/spam/batch    - internal-only convenience endpoint (not
-                                 present in the original code) that scores
-                                 a list of {title, description} items in one
-                                 call. It does not change is_spam's inputs,
-                                 outputs, or behavior for any single item -
-                                 it exists purely so Express doesn't have to
-                                 make N sequential HTTP round-trips when
-                                 listing_to_dict() needs a spam score for
-                                 every listing in a GET /listings/ response
-                                 (the original code recomputed a spam score
-                                 for every listing on every fetch; that
-                                 behavior is preserved exactly, just batched
-                                 at the transport level).
+  GET  /health              liveness check
+  POST /predict/price       RandomForest fair-price estimate. The model was trained on
+                            synthetic data, so treat the result as a rough estimate.
+                            Categories the model was not trained on (e.g. "Other") are
+                            rejected with a 400 instead of being mapped to another one.
+  POST /predict/spam        TF-IDF + Logistic Regression spam risk for one listing
+  POST /predict/spam/batch  the same spam check for many listings in one request
 
-This service is internal-only: it is not exposed to the browser. Only the
-Express backend talks to it (see ML_SERVICE_URL in backend/.env.example).
+Both models are loaded once at startup and reused for every request.
 """
+from contextlib import asynccontextmanager
+from typing import List, Optional
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
 
-from price_model import predict_price
-from spam_model import is_spam
+from price_model import load_model, predict_price
+from spam_model import is_spam, load_spam_model
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_model()
+    load_spam_model()
+    yield
+
 
 app = FastAPI(
     title="CampusNest ML Service",
     description="Internal inference service for the price prediction and spam detection models",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -80,14 +62,16 @@ def predict_price_endpoint(request: PriceRequest):
     if request.months_used < 0:
         raise HTTPException(status_code=400, detail="Months used cannot be negative")
 
-    result = predict_price(
-        category=request.category,
-        original_price=request.original_price,
-        condition=request.condition,
-        months_used=request.months_used,
-        demand_score=request.demand_score,
-    )
-    return result
+    try:
+        return predict_price(
+            category=request.category,
+            original_price=request.original_price,
+            condition=request.condition,
+            months_used=request.months_used,
+            demand_score=request.demand_score,
+        )
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
 
 
 class SpamRequest(BaseModel):
@@ -97,8 +81,7 @@ class SpamRequest(BaseModel):
 
 @app.post("/predict/spam")
 def predict_spam_endpoint(request: SpamRequest):
-    result = is_spam(request.title or "", request.description or "")
-    return result
+    return is_spam(request.title or "", request.description or "")
 
 
 class SpamBatchItem(BaseModel):
@@ -121,8 +104,11 @@ def predict_spam_batch_endpoint(request: SpamBatchRequest):
 
 
 if __name__ == "__main__":
-    import uvicorn
     import os
 
+    import uvicorn
+    from dotenv import load_dotenv
+
+    load_dotenv()
     port = int(os.getenv("ML_SERVICE_PORT", 8001))
     uvicorn.run(app, host="0.0.0.0", port=port)

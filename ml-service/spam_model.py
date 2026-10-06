@@ -1,6 +1,5 @@
 import pickle
 import os
-import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -8,6 +7,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "spam_model.pkl")
+
+# Loaded once per process and reused by every prediction request.
+_model = None
 
 SPAM_LISTINGS = [
     "FREE laptop give away click here now",
@@ -113,6 +115,7 @@ def generate_training_data():
     return augmented_texts, augmented_labels
 
 def train_spam_model():
+    global _model
     texts, labels = generate_training_data()
 
     X_train, X_test, y_train, y_test = train_test_split(
@@ -138,15 +141,19 @@ def train_spam_model():
         pickle.dump(pipeline, f)
 
     print(f"Spam model saved to {MODEL_PATH}")
-    return pipeline
+    _model = pipeline
+    return _model
 
 def load_spam_model():
+    global _model
+    if _model is not None:
+        return _model
     if not os.path.exists(MODEL_PATH):
         print("Spam model not found. Training now...")
         return train_spam_model()
     with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
-    return model
+        _model = pickle.load(f)
+    return _model
 
 def is_spam(title: str, description: str = "") -> dict:
     model = load_spam_model()

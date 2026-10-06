@@ -1,13 +1,10 @@
 """
 Fair-price prediction model.
 
-Ported verbatim (loading, preprocessing, feature order, prediction, chart
-generation) from the original FastAPI backend's `ml/price_model.py`. The
-only change from the original is import paths (this file now lives
-standalone in ml-service/ instead of backend/ml/), and that the chart is
-generated exactly as before with matplotlib, unchanged.
+A RandomForestRegressor trained on the synthetic data from price_data.py. The model
+and its category encoder are loaded once per process (or trained if the .pkl files
+are missing). Categories the encoder was not trained on raise a ValueError.
 """
-import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
@@ -24,6 +21,10 @@ from price_data import generate_price_data
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "price_model.pkl")
 ENCODER_PATH = os.path.join(os.path.dirname(__file__), "label_encoder.pkl")
+
+# Loaded once per process and reused by every prediction request.
+_model = None
+_encoder = None
 
 
 def train_model():
@@ -44,8 +45,8 @@ def train_model():
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
 
-    print(f"Model trained successfully")
-    print(f"Mean Absolute Error: ₹{mae:.2f}")
+    print("Model trained successfully")
+    print(f"Mean Absolute Error: Rs. {mae:.2f}")
     print(f"R2 Score: {r2:.4f}")
 
     with open(MODEL_PATH, "wb") as f:
@@ -54,25 +55,33 @@ def train_model():
         pickle.dump(le, f)
 
     print(f"Model saved to {MODEL_PATH}")
-    return model, le
+    return _cache(model, le)
+
+
+def _cache(model, le):
+    global _model, _encoder
+    _model, _encoder = model, le
+    return _model, _encoder
 
 
 def load_model():
-    if not os.path.exists(MODEL_PATH):
+    if _model is not None and _encoder is not None:
+        return _model, _encoder
+    if not os.path.exists(MODEL_PATH) or not os.path.exists(ENCODER_PATH):
         print("Model not found. Training now...")
         return train_model()
     with open(MODEL_PATH, "rb") as f:
         model = pickle.load(f)
     with open(ENCODER_PATH, "rb") as f:
         le = pickle.load(f)
-    return model, le
+    return _cache(model, le)
 
 
 def predict_price(category: str, original_price: float, condition: int, months_used: int, demand_score: float = 0.5):
     model, le = load_model()
 
     if category not in le.classes_:
-        category = "Electronics"
+        raise ValueError(f"Price estimate is not available for the '{category}' category")
 
     category_encoded = le.transform([category])[0]
     features = np.array([[category_encoded, original_price, condition, months_used, demand_score]])
