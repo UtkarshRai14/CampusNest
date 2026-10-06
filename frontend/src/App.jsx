@@ -13,6 +13,7 @@ import Analytics from './pages/Analytics'
 import Profile from './pages/Profile'
 import Admin from './pages/Admin'
 import ARIAChat from './components/ARIAChat'
+import ServerStatusBanner from './components/ServerStatusBanner'
 import API from './api/axios'
 import socket from './api/socket'
 import useAuthStore from './store/authStore'
@@ -46,6 +47,7 @@ export default function App() {
         success: { iconTheme: { primary: '#00C9B1', secondary: '#fff' } },
       }} />
       <Navbar />
+      <ServerStatusBanner />
       <ARIAChat />
       <Routes>
         <Route path="/" element={<Home />} />

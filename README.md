@@ -110,7 +110,7 @@ All three deploy automatically on a push to `main`.
 - **Frontend**: `VITE_API_URL` in the Vercel project settings is the backend URL. It is read at build time, so redeploy after changing it.
 - **Database**: Neon's connection string, with `sslmode=verify-full`. The live database was seeded with the demo data; its admin account has its own password, not `demo1234`.
 
-Free Render services sleep after 15 minutes without traffic, so the first request after a quiet period takes about a minute. The backend wakes the ML service when it starts; until that finishes, listings show "Spam check unavailable".
+Free Render services sleep after 15 minutes without traffic, so the first request after a quiet period takes about a minute. While that happens the frontend shows a "Waking up the server" notice (`ServerStatusBanner`), driven by the backend's `/health` endpoint. The backend wakes the ML service when it starts; until that finishes, listings show "Spam check unavailable" and price estimates ask the user to try again in a minute.
 
 ## How the ML features work
 
