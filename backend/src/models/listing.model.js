@@ -1,8 +1,5 @@
 const pool = require('../db/pool');
-
-
-
-
+const { withTransaction } = require('../db/transaction');
 
 const SELECT_WITH_SELLER = `
   SELECT
@@ -33,12 +30,10 @@ async function create({
   return findByIdAny(rows[0].id);
 }
 
-
 async function findById(id) {
   const { rows } = await pool.query(`${SELECT_WITH_SELLER} WHERE l.id = $1 AND l.is_active = TRUE`, [id]);
   return rows[0] || null;
 }
-
 
 async function findByIdAny(id) {
   const { rows } = await pool.query(`${SELECT_WITH_SELLER} WHERE l.id = $1`, [id]);
@@ -47,17 +42,11 @@ async function findByIdAny(id) {
 
 async function findBySeller(sellerId) {
   const { rows } = await pool.query(
-    `${SELECT_WITH_SELLER} WHERE l.seller_id = $1 ORDER BY l.created_at DESC`,
+    `${SELECT_WITH_SELLER} WHERE l.seller_id = $1 AND l.is_active = TRUE ORDER BY l.created_at DESC`,
     [sellerId]
   );
   return rows;
 }
-
-
-
-
-
-
 
 async function findMany(filters) {
   const {
@@ -98,16 +87,16 @@ async function findMany(filters) {
   return rows;
 }
 
-
-async function updateFields(id, { title, description, price, condition }) {
+async function updateFields(id, { title, description, price, condition, isFlagged }) {
   const fields = [];
   const values = [];
   let i = 1;
 
-  if (title) { fields.push(`title = $${i++}`); values.push(title); }
-  if (description) { fields.push(`description = $${i++}`); values.push(description); }
-  if (price) { fields.push(`price = $${i++}`); values.push(price); }
-  if (condition) { fields.push(`condition = $${i++}`); values.push(condition); }
+  if (title !== undefined) { fields.push(`title = $${i++}`); values.push(title); }
+  if (description !== undefined) { fields.push(`description = $${i++}`); values.push(description); }
+  if (price !== undefined) { fields.push(`price = $${i++}`); values.push(price); }
+  if (condition !== undefined) { fields.push(`condition = $${i++}`); values.push(condition); }
+  if (isFlagged !== undefined) { fields.push(`is_flagged = $${i++}`); values.push(isFlagged); }
 
   if (fields.length === 0) return findByIdAny(id);
 
@@ -120,13 +109,17 @@ async function softDelete(id) {
   await pool.query('UPDATE listings SET is_active = FALSE WHERE id = $1', [id]);
 }
 
+// Messages reference the listing, so remove them before the listing itself.
+// Returns the sender and receiver of each deleted message.
 async function hardDelete(id) {
-  await pool.query('DELETE FROM listings WHERE id = $1', [id]);
-}
-
-async function findAllForAdmin() {
-  const { rows } = await pool.query(`${SELECT_WITH_SELLER} ORDER BY l.created_at DESC`);
-  return rows;
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(
+      'DELETE FROM messages WHERE listing_id = $1 RETURNING sender_id, receiver_id',
+      [id]
+    );
+    await client.query('DELETE FROM listings WHERE id = $1', [id]);
+    return rows;
+  });
 }
 
 async function countAll() {
@@ -148,12 +141,6 @@ async function averagePrice() {
   return parseFloat(rows[0].avg);
 }
 
-
-
-
-
-
-
 async function countByCategory() {
   const { rows } = await pool.query(
     `SELECT category, COUNT(*)::int AS count
@@ -162,24 +149,6 @@ async function countByCategory() {
   );
   return rows;
 }
-
-
-async function countByDepartment() {
-  const { rows } = await pool.query(
-    `SELECT department_tag, COUNT(*)::int AS count
-     FROM listings WHERE is_active = TRUE AND department_tag IS NOT NULL
-     GROUP BY department_tag ORDER BY count DESC LIMIT 8`
-  );
-  return rows;
-}
-
-async function countFlagged() {
-  const { rows } = await pool.query(
-    'SELECT COUNT(*)::int AS count FROM listings WHERE is_flagged = TRUE'
-  );
-  return rows[0].count;
-}
-
 
 async function findAllActive() {
   const { rows } = await pool.query(
@@ -197,12 +166,9 @@ module.exports = {
   updateFields,
   softDelete,
   hardDelete,
-  findAllForAdmin,
   countAll,
   countDistinctCategories,
   averagePrice,
   countByCategory,
-  countByDepartment,
-  countFlagged,
   findAllActive,
 };
