@@ -2,59 +2,61 @@ const listingModel = require('../models/listing.model');
 const mlService = require('../services/mlService');
 const cloudinaryService = require('../services/cloudinary.service');
 const HttpError = require('../utils/HttpError');
+const {
+  isMissing, parseText, parseOptionalText, parseNumber, parseId,
+  parseSemester, parseCondition, parseListingType, parseCategory,
+} = require('../utils/validators');
 
+const SPAM_HIGH_RISK = 0.6;
+const SPAM_LOW_RISK = 0.15;
+const MAX_PRICE = 10000000;
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
 
 function verificationInfoFromSpamResult(spamResult) {
   if (!spamResult) {
-    
     return {
-      ai_verified: true,
-      spam_score: 0.0,
-      verification_label: '✅ AI Verified',
-      verification_color: '#00A896',
-      verification_bg: '#E8FBF8',
+      spam_checked: false,
+      spam_score: null,
+      verification_label: '❔ Spam check unavailable',
+      verification_color: '#7A9BA8',
+      verification_bg: '#F0F4F5',
     };
   }
 
   const spamProb = spamResult.spam_probability;
-  const isFlagged = spamResult.is_spam;
 
-  if (isFlagged || spamProb > 0.6) {
+  if (spamResult.is_spam || spamProb > SPAM_HIGH_RISK) {
     return {
-      ai_verified: false,
+      spam_checked: true,
       spam_score: spamProb,
-      verification_label: '⚠️ Under Review',
+      verification_label: '⚠️ Flagged by spam check',
       verification_color: '#CC8800',
       verification_bg: '#FFF8E8',
     };
   }
-  if (spamProb < 0.15) {
+  if (spamProb < SPAM_LOW_RISK) {
     return {
-      ai_verified: true,
+      spam_checked: true,
       spam_score: spamProb,
-      verification_label: '✅ AI Verified',
+      verification_label: '✅ Spam check passed',
       verification_color: '#00A896',
       verification_bg: '#E8FBF8',
     };
   }
   return {
-    ai_verified: true,
+    spam_checked: true,
     spam_score: spamProb,
-    verification_label: '🔍 Reviewed',
+    verification_label: '🔍 Spam check: borderline',
     verification_color: '#0080CC',
     verification_bg: '#EBF5FF',
   };
 }
 
-
-
-
-
-
-
-function toListingDict(listing, spamResult) {
+// Seller contact details are only included for logged-in users.
+function toListingDict(listing, spamResult, includeContact) {
   const verification = verificationInfoFromSpamResult(spamResult);
-  return {
+  const dict = {
     id: listing.id,
     title: listing.title,
     description: listing.description,
@@ -68,136 +70,155 @@ function toListingDict(listing, spamResult) {
     is_active: listing.is_active,
     is_flagged: listing.is_flagged,
     seller_id: listing.seller_id,
-    seller_name: listing.seller_name || 'IIIT Sonepat Student',
+    seller_name: listing.seller_name || 'Student',
     seller_school: listing.seller_school || '',
     seller_department: listing.seller_department || '',
     seller_semester: listing.seller_semester || 0,
-    seller_email: listing.seller_email || '',
     created_at: listing.created_at,
-    ai_verified: verification.ai_verified,
+    spam_checked: verification.spam_checked,
     spam_score: verification.spam_score,
     verification_label: verification.verification_label,
     verification_color: verification.verification_color,
     verification_bg: verification.verification_bg,
   };
+  if (includeContact) {
+    dict.seller_email = listing.seller_email || '';
+    dict.seller_whatsapp = listing.seller_whatsapp || null;
+  }
+  return dict;
 }
 
-
-async function toListingDicts(listings) {
+async function toListingDicts(listings, includeContact) {
   if (listings.length === 0) return [];
-  let spamResults;
+  let spamResults = [];
   try {
     spamResults = await mlService.isSpamBatch(
       listings.map((l) => ({ id: l.id, title: l.title || '', description: l.description || '' }))
     );
   } catch (err) {
-    spamResults = null; 
+    console.error(`Spam check unavailable: ${err.message}`);
   }
-  const byId = new Map((spamResults || []).map((r) => [r.id, r]));
-  return listings.map((l) => toListingDict(l, byId.get(l.id) || null));
+  const byId = new Map(spamResults.map((r) => [r.id, r]));
+  return listings.map((l) => toListingDict(l, byId.get(l.id) || null, includeContact));
 }
 
+async function checkSpam(title, description) {
+  try {
+    return await mlService.isSpam(title, description || '');
+  } catch (err) {
+    console.error(`Spam check unavailable: ${err.message}`);
+    return null;
+  }
+}
 
 async function createListing(req, res) {
-  const {
-    title, description, price, condition, category, listing_type: listingType,
-    department_tag: departmentTagRaw, semester_tag: semesterTagRaw,
-  } = req.body;
+  const body = req.body || {};
 
-  if (!title || price === undefined || condition === undefined || !category || !listingType) {
-    throw new HttpError(422, [{ msg: 'title, price, condition, category and listing_type are required' }]);
-  }
+  const title = parseText(body.title, 'Title', { max: 120 });
+  const description = parseOptionalText(body.description, 'Description', { max: 2000 });
+  const price = parseNumber(body.price, 'Price', { positive: true, max: MAX_PRICE });
+  const condition = parseCondition(body.condition);
+  const category = parseCategory(body.category);
+  const listingType = parseListingType(body.listing_type);
+  const departmentTag = parseOptionalText(body.department_tag, 'Department tag', { max: 150 }) || req.user.department;
+  const semesterTag = isMissing(body.semester_tag)
+    ? req.user.semester
+    : parseSemester(body.semester_tag, 'Semester tag');
 
   let imageUrl = null;
-  if (req.file && req.file.buffer && req.file.buffer.length > 0) {
+  if (req.file && req.file.buffer.length > 0) {
     try {
       imageUrl = await cloudinaryService.uploadImage(req.file.buffer);
     } catch (err) {
-      
       console.error(`Image upload failed: ${err.message || err}`);
+      throw new HttpError(502, 'Image upload failed. Please try again or post without a photo.');
     }
   }
 
-  const spamResult = await mlService.isSpam(title, description || '');
+  const spamResult = await checkSpam(title, description);
 
   const listing = await listingModel.create({
     title,
-    description: description || null,
-    price: parseFloat(price),
-    condition: parseInt(condition, 10),
-    category,
-    listingType,
-    departmentTag: departmentTagRaw || req.user.department,
-    semesterTag: semesterTagRaw ? parseInt(semesterTagRaw, 10) : null,
-    imageUrl,
-    sellerId: req.user.id,
-    isFlagged: spamResult.is_spam,
-  });
-
-  const [dict] = await toListingDicts([listing]);
-  return res.json(dict);
-}
-
-
-async function getListings(req, res) {
-  const {
-    category, listing_type: listingType, department_tag: departmentTag, semester_tag: semesterTag,
-    min_price: minPrice, max_price: maxPrice, min_condition: minCondition, search,
-    skip, limit,
-  } = req.query;
-
-  const listings = await listingModel.findMany({
+    description,
+    price,
+    condition,
     category,
     listingType,
     departmentTag,
-    semesterTag: semesterTag ? parseInt(semesterTag, 10) : undefined,
-    minPrice: minPrice !== undefined ? parseFloat(minPrice) : undefined,
-    maxPrice: maxPrice !== undefined ? parseFloat(maxPrice) : undefined,
-    minCondition: minCondition !== undefined ? parseInt(minCondition, 10) : undefined,
-    search,
-    skip: skip !== undefined ? parseInt(skip, 10) : 0,
-    limit: limit !== undefined ? parseInt(limit, 10) : 50,
+    semesterTag,
+    imageUrl,
+    sellerId: req.user.id,
+    isFlagged: spamResult ? spamResult.is_spam : false,
   });
 
-  return res.json(await toListingDicts(listings));
+  return res.json(toListingDict(listing, spamResult, true));
 }
 
+async function getListings(req, res) {
+  const q = req.query;
+
+  const listings = await listingModel.findMany({
+    category: isMissing(q.category) ? undefined : parseText(q.category, 'Category', { max: 100 }),
+    listingType: isMissing(q.listing_type) ? undefined : parseText(q.listing_type, 'Listing type', { max: 20 }),
+    departmentTag: isMissing(q.department_tag) ? undefined : parseText(q.department_tag, 'Department tag', { max: 150 }),
+    semesterTag: isMissing(q.semester_tag) ? undefined : parseSemester(q.semester_tag, 'Semester tag'),
+    minPrice: isMissing(q.min_price) ? undefined : parseNumber(q.min_price, 'Minimum price', { min: 0 }),
+    maxPrice: isMissing(q.max_price) ? undefined : parseNumber(q.max_price, 'Maximum price', { min: 0 }),
+    minCondition: isMissing(q.min_condition) ? undefined : parseCondition(q.min_condition),
+    search: isMissing(q.search) ? undefined : parseText(q.search, 'Search', { max: 100 }),
+    skip: isMissing(q.skip) ? 0 : parseNumber(q.skip, 'Skip', { integer: true, min: 0 }),
+    limit: isMissing(q.limit) ? DEFAULT_LIMIT : parseNumber(q.limit, 'Limit', { integer: true, min: 1, max: MAX_LIMIT }),
+  });
+
+  return res.json(await toListingDicts(listings, Boolean(req.user)));
+}
 
 async function getMyListings(req, res) {
   const listings = await listingModel.findBySeller(req.user.id);
-  return res.json(await toListingDicts(listings));
+  return res.json(await toListingDicts(listings, true));
 }
 
-
 async function getListing(req, res) {
-  const listing = await listingModel.findById(parseInt(req.params.id, 10));
+  const listing = await listingModel.findById(parseId(req.params.id, 'Listing id'));
   if (!listing) throw new HttpError(404, 'Listing not found');
-  const [dict] = await toListingDicts([listing]);
+  const [dict] = await toListingDicts([listing], Boolean(req.user));
   return res.json(dict);
 }
 
-
 async function updateListing(req, res) {
-  const id = parseInt(req.params.id, 10);
-  const listing = await listingModel.findByIdAny(id);
+  const id = parseId(req.params.id, 'Listing id');
+  const listing = await listingModel.findById(id);
   if (!listing) throw new HttpError(404, 'Listing not found');
   if (listing.seller_id !== req.user.id) throw new HttpError(403, 'Not your listing');
 
-  const { title, description, price, condition } = req.query;
-  const updated = await listingModel.updateFields(id, {
-    title,
-    description,
-    price: price !== undefined ? parseFloat(price) : undefined,
-    condition: condition !== undefined ? parseInt(condition, 10) : undefined,
-  });
-  const [dict] = await toListingDicts([updated]);
+  const body = req.body || {};
+  const updates = {};
+  if (body.title !== undefined) updates.title = parseText(body.title, 'Title', { max: 120 });
+  if (body.description !== undefined) updates.description = parseOptionalText(body.description, 'Description', { max: 2000 });
+  if (body.price !== undefined) updates.price = parseNumber(body.price, 'Price', { positive: true, max: MAX_PRICE });
+  if (body.condition !== undefined) updates.condition = parseCondition(body.condition);
+  if (Object.keys(updates).length === 0) throw new HttpError(400, 'No changes provided');
+
+  // Editing the text re-runs the spam check so an edit cannot bypass it.
+  const textChanged = updates.title !== undefined || updates.description !== undefined;
+  let spamResult = null;
+  if (textChanged) {
+    const title = updates.title !== undefined ? updates.title : listing.title;
+    const description = updates.description !== undefined ? updates.description : listing.description;
+    spamResult = await checkSpam(title, description);
+    if (spamResult) updates.isFlagged = spamResult.is_spam;
+  }
+
+  const updated = await listingModel.updateFields(id, updates);
+  const dict = textChanged
+    ? toListingDict(updated, spamResult, true)
+    : (await toListingDicts([updated], true))[0];
   return res.json(dict);
 }
 
-
 async function deleteListing(req, res) {
-  const id = parseInt(req.params.id, 10);
-  const listing = await listingModel.findByIdAny(id);
+  const id = parseId(req.params.id, 'Listing id');
+  const listing = await listingModel.findById(id);
   if (!listing) throw new HttpError(404, 'Listing not found');
   if (listing.seller_id !== req.user.id) throw new HttpError(403, 'Not your listing');
 
@@ -212,5 +233,4 @@ module.exports = {
   getListing,
   updateListing,
   deleteListing,
-  toListingDicts, 
 };

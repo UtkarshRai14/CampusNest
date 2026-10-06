@@ -7,12 +7,6 @@ cloudinary.config({
   api_secret: env.cloudinaryApiSecret,
 });
 
-
-
-
-
-
-
 function uploadImage(fileBuffer) {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
@@ -33,14 +27,4 @@ function uploadImage(fileBuffer) {
   });
 }
 
-
-
-
-
-
-async function deleteImage(publicId) {
-  const result = await cloudinary.uploader.destroy(publicId);
-  return result.result === 'ok';
-}
-
-module.exports = { uploadImage, deleteImage };
+module.exports = { uploadImage };
