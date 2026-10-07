@@ -39,7 +39,6 @@ async function initDb() {
       semester_tag INTEGER,
       image_url VARCHAR,
       is_active BOOLEAN DEFAULT TRUE,
-      is_flagged BOOLEAN DEFAULT FALSE,
       seller_id INTEGER REFERENCES users(id),
       created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc')
     );

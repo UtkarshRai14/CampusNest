@@ -76,7 +76,7 @@ export default function Profile() {
     if (!title) { toast.error('Title is required'); return }
     if (!(price > 0)) { toast.error('Enter a valid price'); return }
 
-    // Only changed fields are sent, so an unchanged title is not spam-checked again.
+    // Only changed fields are sent.
     const changes = {}
     if (title !== original.title) changes.title = title
     if (description !== (original.description || '')) changes.description = description

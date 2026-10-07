@@ -151,11 +151,6 @@ export default function Home() {
                 <span style={{ fontSize: 11, background: '#E8FBF8', color: '#00A896', padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>SELL</span>
                 <span style={{ fontWeight: 900, fontSize: 18, background: 'linear-gradient(135deg, #00C9B1, #00A896)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>₹280</span>
               </div>
-
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #F0F8F6', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 14 }}>🛡️</span>
-                <span style={{ fontSize: 11, color: '#00A896', fontWeight: 700 }}>✅ Spam check passed</span>
-              </div>
             </motion.div>
 
             <motion.div
@@ -314,11 +309,6 @@ export default function Home() {
                         <div style={{ position: 'absolute', top: 10, left: 10, background: tc.bg, color: tc.color, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>
                           {item.listing_type?.toUpperCase()}
                         </div>
-                        {item.verification_label && (
-                          <div style={{ position: 'absolute', bottom: 10, left: 10, background: item.verification_bg || '#E8FBF8', color: item.verification_color || '#00A896', borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 700 }}>
-                            {item.verification_label}
-                          </div>
-                        )}
                       </div>
                       <div style={{ padding: '18px 20px' }}>
                         <h3 style={{ fontWeight: 700, color: '#0D2B35', marginBottom: 8, fontSize: 15, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.title}</h3>

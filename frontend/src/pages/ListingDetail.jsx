@@ -155,28 +155,6 @@ export default function ListingDetail() {
 
             <div style={{ background: '#fff', borderRadius: 20, padding: 28, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.08)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-
-                {listing.verification_label && (
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 8,
-                    background: listing.verification_bg || '#E8FBF8',
-                    color: listing.verification_color || '#00A896',
-                    borderRadius: 10, padding: '8px 16px',
-                    fontSize: 13, fontWeight: 700, marginBottom: 16,
-                    border: `1px solid ${listing.verification_color || '#00A896'}33`,
-                    width: 'fit-content',
-                  }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 800 }}>{listing.verification_label}</div>
-                      <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 500 }}>
-                        {listing.spam_checked
-                          ? `Spam risk score: ${(listing.spam_score * 100).toFixed(0)}% (automatic check)`
-                          : 'The spam checker may still be starting up. Refresh in a minute to see the result.'}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <span style={{ padding: '4px 14px', borderRadius: 20, background: tc.bg, color: tc.color, fontWeight: 700, fontSize: 13 }}>
                   {listing.listing_type?.toUpperCase()}
                 </span>

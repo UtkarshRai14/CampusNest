@@ -2,7 +2,7 @@ const pool = require('../db/pool');
 const userModel = require('../models/user.model');
 
 async function queryActiveListings({ excludeSellerId, departmentTag, semesterTag, limit }) {
-  const clauses = ['is_active = TRUE', 'is_flagged = FALSE', 'seller_id != $1'];
+  const clauses = ['is_active = TRUE', 'seller_id != $1'];
   const values = [excludeSellerId];
   let i = 2;
 
@@ -40,7 +40,7 @@ function toRecommendationShape(listing, relevanceScore) {
 
 async function getPopularListings(limit = 6) {
   const { rows } = await pool.query(
-    `SELECT * FROM listings WHERE is_active = TRUE AND is_flagged = FALSE
+    `SELECT * FROM listings WHERE is_active = TRUE
      ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );

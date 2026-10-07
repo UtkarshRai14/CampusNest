@@ -16,16 +16,16 @@ const SELECT_WITH_SELLER = `
 
 async function create({
   title, description, price, condition, category, listingType,
-  departmentTag, semesterTag, imageUrl, sellerId, isFlagged,
+  departmentTag, semesterTag, imageUrl, sellerId,
 }) {
   const { rows } = await pool.query(
     `INSERT INTO listings
       (title, description, price, condition, category, listing_type,
-       department_tag, semester_tag, image_url, seller_id, is_active, is_flagged)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11)
+       department_tag, semester_tag, image_url, seller_id, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE)
      RETURNING id`,
     [title, description || null, price, condition, category, listingType,
-      departmentTag || null, semesterTag || null, imageUrl || null, sellerId, isFlagged]
+      departmentTag || null, semesterTag || null, imageUrl || null, sellerId]
   );
   return findByIdAny(rows[0].id);
 }
@@ -87,7 +87,7 @@ async function findMany(filters) {
   return rows;
 }
 
-async function updateFields(id, { title, description, price, condition, isFlagged }) {
+async function updateFields(id, { title, description, price, condition }) {
   const fields = [];
   const values = [];
   let i = 1;
@@ -96,7 +96,6 @@ async function updateFields(id, { title, description, price, condition, isFlagge
   if (description !== undefined) { fields.push(`description = $${i++}`); values.push(description); }
   if (price !== undefined) { fields.push(`price = $${i++}`); values.push(price); }
   if (condition !== undefined) { fields.push(`condition = $${i++}`); values.push(condition); }
-  if (isFlagged !== undefined) { fields.push(`is_flagged = $${i++}`); values.push(isFlagged); }
 
   if (fields.length === 0) return findByIdAny(id);
 
@@ -144,7 +143,7 @@ async function averagePrice() {
 async function countByCategory() {
   const { rows } = await pool.query(
     `SELECT category, COUNT(*)::int AS count
-     FROM listings WHERE is_active = TRUE AND is_flagged = FALSE
+     FROM listings WHERE is_active = TRUE
      GROUP BY category ORDER BY count DESC`
   );
   return rows;

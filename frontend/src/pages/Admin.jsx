@@ -110,7 +110,6 @@ export default function Admin() {
               { icon: '💰', label: 'For Sale', value: stats.sell_listings, color: '#FFF8E8' },
               { icon: '🔑', label: 'For Rent', value: stats.rent_listings, color: '#F5EEFF' },
               { icon: '🤝', label: 'Borrow', value: stats.borrow_listings, color: '#E8FBF8' },
-              { icon: '⚠️', label: 'Spam Flagged', value: stats.spam_flagged, color: '#FFF0F0' },
             ].map(s => (
               <motion.div key={s.label} whileHover={{ y: -4 }}
                 style={{ background: '#fff', borderRadius: 16, padding: '20px', border: '1px solid #D0F5F0', textAlign: 'center' }}>
@@ -208,7 +207,7 @@ export default function Admin() {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead style={{ background: '#F8FFFE' }}>
                       <tr>
-                        {['ID', 'Title', 'Category', 'Type', 'Price', 'Condition', 'Spam flag', 'Seller ID', 'Posted', 'Action'].map(h => (
+                        {['ID', 'Title', 'Category', 'Type', 'Price', 'Condition', 'Seller ID', 'Posted', 'Action'].map(h => (
                           <th key={h} style={thStyle}>{h}</th>
                         ))}
                       </tr>
@@ -230,12 +229,6 @@ export default function Admin() {
                           </td>
                           <td style={{ ...tdStyle, fontWeight: 700, color: '#00A896' }}>₹{l.price}</td>
                           <td style={tdStyle}>⭐ {l.condition}/5</td>
-                          <td style={tdStyle}>
-                            {l.is_flagged
-                              ? <span style={{ background: '#FFF0F0', color: '#E05555', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>⚠️ Flagged</span>
-                              : <span style={{ background: '#F0F4F5', color: '#7A9BA8', padding: '2px 10px', borderRadius: 20, fontWeight: 700, fontSize: 11 }}>Not flagged</span>
-                            }
-                          </td>
                           <td style={tdStyle}>#{l.seller_id}</td>
                           <td style={{ ...tdStyle, fontSize: 12, color: '#7A9BA8' }}>{l.created_at?.split('T')[0]}</td>
                           <td style={tdStyle}>

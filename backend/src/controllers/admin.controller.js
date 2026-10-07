@@ -13,8 +13,7 @@ async function getStats(req, res) {
       (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'sell') AS sell_listings,
       (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'rent') AS rent_listings,
       (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'borrow') AS borrow_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'swap') AS swap_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND is_flagged = TRUE) AS spam_flagged
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'swap') AS swap_listings
   `);
   return res.json(rows[0]);
 }
@@ -49,7 +48,6 @@ async function getAllListings(req, res) {
     listing_type: l.listing_type,
     price: l.price,
     condition: l.condition,
-    is_flagged: l.is_flagged,
     seller_id: l.seller_id,
     created_at: l.created_at,
   })));
