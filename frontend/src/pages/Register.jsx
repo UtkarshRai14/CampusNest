@@ -74,12 +74,11 @@ export default function Register() {
       toast.success('Welcome to CampusNest! 🎓')
       navigate('/')
     } catch (err) {
-      console.error('Registration failed:', err.message)
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') {
         toast.error(detail)
       } else if (err.message === 'Network Error') {
-        toast.error('Server is busy, please try again in a moment ⏳')
+        toast.error('Could not reach the server. Please try again in a minute.')
       } else {
         toast.error('Registration failed. Please try again.')
       }

@@ -60,8 +60,7 @@ export default function Analytics() {
       setTrending(Array.isArray(trendData) ? trendData : [])
       setChart(trendRes.data?.chart || null)
       setSummary(summaryRes.data || null)
-    } catch (e) {
-      console.error('Analytics error:', e)
+    } catch {
       setError(true)
       setLoading(false)
       return

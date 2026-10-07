@@ -341,11 +341,9 @@ export default function Messages() {
                     <div style={{ fontSize: 11, color: '#00A896', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📦 {activeConv.listing_title}</div>
                     {activeConv.other_user_email && window.innerWidth >= 768 && (
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                        {activeConv.other_user_email && (
-                          <a href={'mailto:' + activeConv.other_user_email} style={{ fontSize: 11, color: '#7A9BA8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            ✉️ {activeConv.other_user_email}
-                          </a>
-                        )}
+                        <a href={'mailto:' + activeConv.other_user_email} style={{ fontSize: 11, color: '#7A9BA8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          ✉️ {activeConv.other_user_email}
+                        </a>
                         {activeConv.other_user_whatsapp && (
                           <a href={'https://wa.me/91' + activeConv.other_user_whatsapp.replace(/[^0-9]/g, '')} target='_blank' rel='noreferrer'
                             style={{ fontSize: 11, color: '#25D366', fontWeight: 700, textDecoration: 'none', background: '#E8FFF0', padding: '2px 8px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -439,7 +437,7 @@ export default function Messages() {
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#00A896' }}>⚡ {quickReplies.label}</span>
                         {lastReceivedMsg && (
                           <span style={{ fontSize: 11, color: '#A0BCBB', background: '#F0FFFE', padding: '2px 10px', borderRadius: 20, border: '1px solid #E0F5F0', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            Re: "{lastReceivedMsg.content.substring(0, 25)}..."
+                            Re: "{lastReceivedMsg.content.length > 25 ? `${lastReceivedMsg.content.substring(0, 25)}...` : lastReceivedMsg.content}"
                           </span>
                         )}
                       </div>
