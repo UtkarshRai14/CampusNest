@@ -53,6 +53,8 @@ export default function ListingDetail() {
   const [activeQuick, setActiveQuick] = useState(null)
 
   useEffect(() => {
+    // The page stays mounted when another listing is opened (e.g. from ARIA), so reset per listing.
+    setImgError(false)
     API.get(`/listings/${id}`)
       .then(r => setListing(r.data))
       .catch(err => {
