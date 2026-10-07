@@ -58,13 +58,13 @@ function extractPrice(text) {
   return bare ? toAmount(bare[1]) : null;
 }
 
+// Whole words only, so "folding" or "badminton" do not read as "old" or "bad".
 function extractCondition(text) {
-  const textLower = text.toLowerCase();
-  if (textLower.includes('like new') || textLower.includes('brand new')) return 5;
-  if (textLower.includes('very good')) return 4;
-  if (textLower.includes('good')) return 3;
-  if (textLower.includes('fair') || textLower.includes('okay')) return 2;
-  if (textLower.includes('poor') || textLower.includes('bad') || textLower.includes('old')) return 1;
+  if (containsWord(text, 'like new') || containsWord(text, 'brand new')) return 5;
+  if (containsWord(text, 'very good')) return 4;
+  if (containsWord(text, 'good')) return 3;
+  if (containsWord(text, 'fair') || containsWord(text, 'okay')) return 2;
+  if (containsWord(text, 'poor') || containsWord(text, 'bad') || containsWord(text, 'old')) return 1;
   return 3;
 }
 
