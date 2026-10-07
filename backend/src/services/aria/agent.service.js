@@ -1,8 +1,7 @@
 const listingModel = require('../../models/listing.model');
-const mlService = require('../mlService');
 
 // This agent is rule-based: regular expressions and keyword lists pull details out of the
-// message, the ML service estimates a price and spam risk, and the user confirms the draft.
+// message, and the user confirms the draft.
 
 const CATEGORY_KEYWORDS = {
   Books: ['book', 'textbook', 'novel', 'guide'],
@@ -23,9 +22,8 @@ const LISTING_TYPE_KEYWORDS = {
   swap: ['swap', 'exchange', 'trade'],
 };
 
-// The price model has no "Other" category, so no estimate can be made for it.
+// Used when no category keyword matches the message.
 const UNKNOWN_CATEGORY = 'Other';
-const DEFAULT_MONTHS_USED = 6;
 
 function containsWord(text, word) {
   return new RegExp(`\\b${word}s?\\b`, 'i').test(text);
@@ -49,23 +47,15 @@ function toAmount(raw) {
   return parseFloat(raw.replace(/,/g, ''));
 }
 
-// The number in the message is used as the item's original purchase price, because that is
-// what the price model needs. Prefers "bought for 1500" / "₹1500" over a bare number.
+// The number in the message is used as the listing price. Prefers "₹500" / "500 rupees"
+// over a bare number.
 function extractPrice(text) {
-  const marked = text.match(/(?:bought|purchased|original(?:\s+price)?|mrp)\D{0,15}?(\d[\d,]{1,6})/i)
-    || text.match(/(?:₹|rs\.?\s?|inr\s?)(\d[\d,]{1,6})/i)
+  const marked = text.match(/(?:₹|rs\.?\s?|inr\s?)(\d[\d,]{1,6})/i)
     || text.match(/(\d[\d,]{1,6})\s?(?:rs\b|rupees?|₹)/i);
   if (marked) return toAmount(marked[1]);
 
   const bare = text.match(/(?<![\w-])(\d{2,6})(?![\w-])(?!\s*(?:months?|mos?|years?|yrs?)\b)/i);
   return bare ? toAmount(bare[1]) : null;
-}
-
-function extractMonthsUsed(text) {
-  const months = text.match(/(\d{1,3})\s*(?:months?|mos?)\b/i);
-  if (months) return parseInt(months[1], 10);
-  const years = text.match(/(\d{1,2})\s*(?:years?|yrs?)\b/i);
-  return years ? parseInt(years[1], 10) * 12 : null;
 }
 
 function extractCondition(text) {
@@ -78,7 +68,7 @@ function extractCondition(text) {
   return 3;
 }
 
-// "sell my calculator, good condition, bought for 1500" -> "Calculator"
+// "sell my calculator, good condition, for 500 rupees" -> "Calculator"
 function buildTitle(message) {
   const item = message
     .replace(/^\s*(?:i\s+(?:want|wanna|would like)\s+to\s+|please\s+)?(?:sell(?:ing)?|rent(?:ing)?(?:\s+out)?|lend(?:ing)?|borrow(?:ing)?|swap(?:ping)?|exchange|trade)\s+(?:my\s+|a\s+|an\s+|the\s+)?/i, '')
@@ -88,63 +78,30 @@ function buildTitle(message) {
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
-const formatRange = (lower, upper) => `₹${Math.round(lower)}–₹${Math.round(upper)}`;
-
 async function runListingAgent(userMessage) {
   const category = guessCategory(userMessage);
   const listingType = guessListingType(userMessage);
   const condition = extractCondition(userMessage);
-  const originalPrice = extractPrice(userMessage);
-  const statedMonths = extractMonthsUsed(userMessage);
-  const monthsUsed = statedMonths !== null ? statedMonths : DEFAULT_MONTHS_USED;
+  const price = extractPrice(userMessage);
 
   const steps = [
     `🔍 Step 1 — Detected: category ${category}, type ${listingType}, condition ${condition}/5`,
   ];
 
-  if (category === UNKNOWN_CATEGORY || originalPrice === null) {
-    steps.push('⏸️ Step 2 — Price model skipped, not enough information');
+  if (price === null) {
+    steps.push('⏸️ Step 2 — No price found in the message');
     return {
       agent_steps: steps,
       draft: null,
-      spam_check: null,
-      summary: category === UNKNOWN_CATEGORY
-        ? "I couldn't tell which category this item belongs to, so I can't estimate a price. Mention what it is (for example calculator, laptop or book) and its original price."
-        : "I need the item's original price to estimate a fair price. Try something like: sell my calculator, good condition, bought for 1500 rupees.",
+      summary: 'I need a price for the listing. Try something like: sell my calculator, good condition, for 500 rupees.',
     };
   }
 
-  const priceResult = await mlService.predictPrice({
-    category,
-    originalPrice,
-    condition,
-    monthsUsed,
-    demandScore: 0.5,
-  });
-  const spamResult = await mlService.isSpam(userMessage, '');
-  const suggestedPrice = Math.round(priceResult.predicted_price);
-
-  const monthsNote = statedMonths !== null ? `${monthsUsed} months used` : `assumed ${monthsUsed} months used`;
   steps.push(
-    `🤖 Step 2 — ML price model (original price ₹${originalPrice}, ${monthsNote}) → estimate ₹${suggestedPrice}`,
-    `🛡️ Step 3 — Spam check → ${spamResult.is_spam ? '⚠️ flagged' : '✅ not flagged'}`
+    `💰 Step 2 — Price → ₹${price}`,
+    '📝 Step 3 — Draft ready for your review'
   );
-
-  if (spamResult.is_spam) {
-    return {
-      agent_steps: steps,
-      draft: null,
-      spam_check: spamResult,
-      summary: 'This looks like spam, so I did not create a draft. Please rephrase your request.',
-    };
-  }
-
-  steps.push('📝 Step 4 — Draft ready for your review');
   const title = buildTitle(userMessage);
-  const range = formatRange(priceResult.lower_bound, priceResult.upper_bound);
-  const priceNote = listingType === 'sell'
-    ? ''
-    : ' This is an estimated resale value, so adjust the price for a rent, borrow or swap listing after posting (Profile → My Listings → Edit).';
 
   return {
     agent_steps: steps,
@@ -153,15 +110,9 @@ async function runListingAgent(userMessage) {
       category,
       condition,
       listing_type: listingType,
-      original_price: originalPrice,
-      months_used: monthsUsed,
-      suggested_price: suggestedPrice,
-      price_range: range,
+      price,
     },
-    spam_check: spamResult,
-    summary:
-      `I drafted a ${listingType} listing for "${title}" in ${category} at ₹${suggestedPrice} ` +
-      `(estimated range ${range}). Confirm to post it.${priceNote}`,
+    summary: `I drafted a ${listingType} listing for "${title}" in ${category} at ₹${price}. Confirm to post it.`,
   };
 }
 

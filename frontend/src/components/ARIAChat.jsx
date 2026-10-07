@@ -7,12 +7,11 @@ import useAuthStore from '../store/authStore'
 const suggestions = [
   'What books do I need for IT Sem 3?',
   'Is anyone selling a calculator?',
-  'How does price prediction work?',
   'What is the borrow feature?',
 ]
 
 const agentSuggestions = [
-  '🧾 Draft: sell my calculator, good condition, bought for 1500 rupees',
+  '🧾 Draft: sell my calculator, good condition, for 500 rupees',
   '🔍 Search: find a laptop under 10000 rupees',
 ]
 
@@ -72,9 +71,7 @@ export default function ARIAChat() {
       }])
     } catch (err) {
       const detail = err.response?.data?.detail
-      let text = typeof detail === 'string' ? `The Listing Assistant could not finish: ${detail}` : 'The Listing Assistant ran into an issue. Please try again.'
-      // 503: the ML service is asleep (free hosting) and takes about a minute to start.
-      if (err.response?.status === 503) text = 'The ML models behind the Listing Assistant are starting up. Please send your message again in about a minute.'
+      const text = typeof detail === 'string' ? `The Listing Assistant could not finish: ${detail}` : 'The Listing Assistant ran into an issue. Please try again.'
       setMessages(prev => [...prev, { role: 'aria', text }])
     } finally {
       setLoading(false)
@@ -86,8 +83,8 @@ export default function ARIAChat() {
     try {
       const formData = new FormData()
       formData.append('title', draft.title)
-      formData.append('description', `Posted via the CampusNest Listing Assistant. ML price estimate range: ${draft.price_range}`)
-      formData.append('price', draft.suggested_price)
+      formData.append('description', 'Posted via the CampusNest Listing Assistant.')
+      formData.append('price', draft.price)
       formData.append('condition', draft.condition)
       formData.append('category', draft.category)
       formData.append('listing_type', draft.listing_type)
@@ -244,9 +241,8 @@ export default function ARIAChat() {
                         <div style={{ fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#0D2B35', marginBottom: 4 }}>{m.draft.title}</div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isMobile ? 11 : 12, color: '#7A9BA8' }}>
                           <span style={{ textTransform: 'capitalize' }}>{m.draft.listing_type} · {m.draft.category} · Condition {m.draft.condition}/5</span>
-                          <span style={{ fontWeight: 800, color: '#00A896' }}>₹{m.draft.suggested_price}</span>
+                          <span style={{ fontWeight: 800, color: '#00A896' }}>₹{m.draft.price}</span>
                         </div>
-                        <div style={{ fontSize: 11, color: '#A0BCBB', marginTop: 2 }}>Estimated range: {m.draft.price_range} (from original price ₹{m.draft.original_price})</div>
 
                         {postedIndexes.includes(i) ? (
                           <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 10, background: '#E8FBF8', color: '#00A896', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>
