@@ -8,7 +8,6 @@ const categories = [{ name: 'All', icon: '🏬' }, ...CATEGORIES]
 
 const features = [
   { icon: '🤖', title: 'ARIA Assistant', desc: 'A Gemini-powered chatbot that answers questions about the marketplace and current listings', color: '#E0FBF8' },
-  { icon: '💰', title: 'ML Price Estimate', desc: 'A Random Forest model gives a rough fair-price estimate for your item', color: '#E8F8FF' },
   { icon: '🔄', title: '4 Trade Modes', desc: 'Sell · Rent · Borrow · Skill-Swap all in one campus platform', color: '#F0FFF4' },
   { icon: '🎓', title: 'Made for Students', desc: 'Listings are tagged by department and semester so students find what is relevant to them', color: '#FFF8E8' },
 ]
@@ -112,7 +111,7 @@ export default function Home() {
             <motion.p
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.5 }}
               style={{ fontSize: 18, color: '#4A6572', lineHeight: 1.7, marginBottom: 40, maxWidth: 480 }}>
-              Sell, Rent, Borrow & Skill-Swap within your campus — with an ML price estimate, the ARIA assistant, and recommendations based on your department and semester.
+              Sell, Rent, Borrow & Skill-Swap within your campus — with the ARIA assistant and recommendations based on your department and semester.
             </motion.p>
 
             <motion.div
@@ -151,15 +150,6 @@ export default function Home() {
                 <span style={{ fontSize: 11, background: '#E8FBF8', color: '#00A896', padding: '3px 10px', borderRadius: 20, fontWeight: 700 }}>SELL</span>
                 <span style={{ fontWeight: 900, fontSize: 18, background: 'linear-gradient(135deg, #00C9B1, #00A896)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>₹280</span>
               </div>
-            </motion.div>
-
-            <motion.div
-              animate={{ y: [6, -6, 6] }}
-              transition={{ repeat: Infinity, duration: 3.5, ease: "easeInOut", delay: 0.5 }}
-              style={{ position: 'absolute', top: '5%', right: '0%', background: 'linear-gradient(135deg, #00C9B1, #00A896)', borderRadius: 20, padding: '16px 20px', boxShadow: '0 12px 40px rgba(0,201,177,0.4)', zIndex: 4 }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 4 }}>ML Price Estimate</div>
-              <div style={{ fontSize: 28, fontWeight: 900, color: '#fff' }}>₹280</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>rough estimate</div>
             </motion.div>
 
             <motion.div

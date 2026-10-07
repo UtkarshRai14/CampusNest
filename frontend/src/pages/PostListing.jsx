@@ -8,10 +8,6 @@ import { CATEGORIES } from '../constants'
 
 const categories = CATEGORIES.map(c => c.name)
 const listingTypes = ['sell','rent','borrow','swap']
-// The price model was not trained on these categories, so no estimate is offered for them.
-const NO_PRICE_ESTIMATE = ['Other']
-// Changing any of these makes a previous estimate stale.
-const ESTIMATE_INPUTS = ['category', 'condition', 'months_used', 'original_price']
 const MAX_IMAGE_MB = 10
 
 export default function PostListing() {
@@ -19,23 +15,16 @@ export default function PostListing() {
   const { isAuthenticated } = useAuthStore()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [predicting, setPredicting] = useState(false)
-  const [priceData, setPriceData] = useState(null)
   const [image, setImage] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
   const [form, setForm] = useState({
     title: '', description: '', category: '', listing_type: 'sell',
-    price: '', original_price: '', condition: 3, months_used: 0,
+    price: '', condition: 3,
   })
 
   useEffect(() => { if (!isAuthenticated) { toast.error('Please login first'); navigate('/login') } }, [])
 
-  const update = (k, v) => {
-    setForm(f => ({ ...f, [k]: v }))
-    if (ESTIMATE_INPUTS.includes(k)) setPriceData(null)
-  }
-
-  const canEstimate = !NO_PRICE_ESTIMATE.includes(form.category)
+  const update = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleImage = (e) => {
     const file = e.target.files[0]
@@ -43,28 +32,6 @@ export default function PostListing() {
     if (file.size > MAX_IMAGE_MB * 1024 * 1024) { toast.error(`Image must be under ${MAX_IMAGE_MB}MB`); return }
     setImage(file)
     setImagePreview(URL.createObjectURL(file))
-  }
-
-  const predictPrice = async () => {
-    if (!form.category) { toast.error('Select a category first'); return }
-    const originalPrice = parseFloat(form.original_price)
-    if (!(originalPrice > 0)) { toast.error('Enter the original price of the item'); return }
-    setPredicting(true)
-    try {
-      const res = await API.post('/predict/price', {
-        category: form.category,
-        original_price: originalPrice,
-        condition: parseInt(form.condition, 10),
-        months_used: parseInt(form.months_used, 10) || 0,
-      })
-      setPriceData(res.data)
-      toast.success('Price estimate ready')
-    } catch (err) {
-      // 503: the ML service is asleep (free hosting) and takes about a minute to start.
-      if (err.response?.status === 503) toast.error('The price estimator is starting up. Please try again in about a minute.', { duration: 6000 })
-      else toast.error(err.response?.data?.detail || 'Could not get a price estimate')
-    }
-    finally { setPredicting(false) }
   }
 
   const hasValidPrice = Number(form.price) > 0
@@ -193,69 +160,6 @@ export default function PostListing() {
                     }}>{n}</button>
                   ))}
                 </div>
-              </div>
-
-              <div>
-                <label style={labelStyle}>Months Used</label>
-                <input type="number" min="0" style={inputStyle} placeholder="e.g. 6"
-                  value={form.months_used} onChange={e => update('months_used', e.target.value)}
-                  onFocus={e => e.target.style.borderColor = '#00C9B1'}
-                  onBlur={e => e.target.style.borderColor = '#D0ECE8'} />
-              </div>
-
-              {canEstimate && (
-                <div>
-                  <label style={labelStyle}>Original Price (₹) — for the price estimate</label>
-                  <input type="number" min="1" style={inputStyle} placeholder="What it cost when new, e.g. 1500"
-                    value={form.original_price} onChange={e => update('original_price', e.target.value)}
-                    onFocus={e => e.target.style.borderColor = '#00C9B1'}
-                    onBlur={e => e.target.style.borderColor = '#D0ECE8'} />
-                  <p style={{ fontSize: 12, color: '#A0BCBB', marginTop: 4 }}>Only used for the estimate. Your asking price is set separately below.</p>
-                </div>
-              )}
-
-              <div style={{
-                background: 'linear-gradient(135deg, #E8FDFB, #D0F8F3)',
-                borderRadius: 14, padding: 20, border: '1px solid #B2EFE8',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
-                  <div>
-                    <p style={{ fontWeight: 700, color: '#0D2B35', marginBottom: 2 }}>📊 ML Price Estimate</p>
-                    <p style={{ fontSize: 13, color: '#6A8A96' }}>
-                      {canEstimate
-                        ? 'A Random Forest model estimates a fair resale price. It is a rough guide, not a market price.'
-                        : 'Price estimates are not available for the "Other" category. Enter your own price below.'}
-                    </p>
-                  </div>
-                  {canEstimate && (
-                    <button onClick={predictPrice} disabled={predicting} style={{
-                      padding: '9px 20px', borderRadius: 8, border: 'none', flexShrink: 0,
-                      background: predicting ? '#B2EFE8' : 'linear-gradient(135deg, #00C9B1, #00A896)',
-                      color: '#fff', fontWeight: 700, fontSize: 13, cursor: predicting ? 'not-allowed' : 'pointer',
-                    }}>{predicting ? '...' : 'Predict'}</button>
-                  )}
-                </div>
-                {priceData && (
-                  <>
-                    <div style={{ display: 'flex', gap: 12 }}>
-                      {[['Min', priceData.lower_bound], ['Suggested', priceData.predicted_price], ['Max', priceData.upper_bound]].map(([label, val]) => (
-                        <div key={label} onClick={() => label === 'Suggested' && update('price', Math.round(val))}
-                          style={{
-                            flex: 1, textAlign: 'center', background: label === 'Suggested' ? '#00C9B1' : '#fff',
-                            borderRadius: 10, padding: '10px 0', cursor: label === 'Suggested' ? 'pointer' : 'default',
-                            border: '1px solid #B2EFE8',
-                          }}>
-                          <div style={{ fontSize: 11, color: label === 'Suggested' ? 'rgba(255,255,255,0.8)' : '#7A9BA8', marginBottom: 2 }}>{label}</div>
-                          <div style={{ fontWeight: 800, color: label === 'Suggested' ? '#fff' : '#0D2B35' }}>₹{Math.round(val).toLocaleString('en-IN')}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <p style={{ fontSize: 12, color: '#6A8A96', marginTop: 10 }}>
-                      Estimated range {priceData.price_range}. Click the suggested price to use it.
-                      {form.listing_type !== 'sell' && ' This is a resale value, so set your own rate for a rent, borrow or swap listing.'}
-                    </p>
-                  </>
-                )}
               </div>
 
               <div>

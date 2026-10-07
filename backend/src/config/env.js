@@ -19,8 +19,6 @@ const env = {
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY || '',
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
-
-  mlServiceUrl: process.env.ML_SERVICE_URL || 'http://localhost:8001',
 };
 
 // The development default is public, so tokens signed with it can be forged.

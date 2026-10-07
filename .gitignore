@@ -8,13 +8,6 @@ dist/
 build/
 **/build/
 
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-
 # Environment files / secrets
 .env
 .env.local
@@ -35,7 +28,6 @@ pnpm-debug.log*
 
 # Coverage
 coverage/
-.pytest_cache/
 
 # Vercel local files
 .vercel/

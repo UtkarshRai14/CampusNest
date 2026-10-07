@@ -33,7 +33,7 @@ const MESSAGES = {
   ready: {
     icon: '✅',
     title: 'Server is ready',
-    text: 'Thanks for waiting! Price estimates and spam checks can take up to another minute to start.',
+    text: 'Thanks for waiting! CampusNest is ready to use.',
   },
 }
 

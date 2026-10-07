@@ -122,10 +122,8 @@ export default function Analytics() {
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 20 }}>
-              <StatCard icon="📈" label="Price Estimate" value="Random Forest" sub="ML model trained on synthetic data" color="#E8FBF8" delay={0.4} />
-              <StatCard icon="🛡️" label="Spam Check" value="Logistic Regression" sub="TF-IDF text classifier" color="#EBF5FF" delay={0.5} />
-              <StatCard icon="🎯" label="Recommendations" value="Rule-based" sub="Department, semester and recency" color="#FFF8E8" delay={0.6} />
-              <StatCard icon="🎓" label="Programs" value="4" sub="CSE, CSE-DS&A, IT & PhD" color="#F5EEFF" delay={0.7} />
+              <StatCard icon="🎯" label="Recommendations" value="Rule-based" sub="Department, semester and recency" color="#FFF8E8" delay={0.4} />
+              <StatCard icon="🎓" label="Programs" value="4" sub="CSE, CSE-DS&A, IT & PhD" color="#F5EEFF" delay={0.5} />
             </div>
 
             {chart && (

@@ -56,7 +56,7 @@ async function saveTurn(userId, userMessage, ariaReply) {
 const FALLBACK_REPLIES = [
   [/\b(borrow|lend)\b/, 'You can borrow items from fellow students. Open Browse, choose the Borrow listing type, and message the owner to arrange it.'],
   [/\b(rent|renting)\b/, 'To rent an item, open Browse, choose the Rent listing type, and message the owner to agree on the period and price.'],
-  [/\b(sell|selling|post)\b/, 'To sell something, click "+ List Item" in the navbar and follow the 3 steps. On the pricing step you can get an ML-based price estimate.'],
+  [/\b(sell|selling|post)\b/, 'To sell something, click "+ List Item" in the navbar and follow the 3 steps.'],
   [/\b(books?|notes|calculators?|laptops?|fans?|coolers?|hostel|bed|stationery|electronics?)\b/, "I can't look up live listings right now. Open Browse and pick the matching category to see what is currently listed."],
   [/\b(hi|hello|hey)\b/, 'Hello! I am ARIA, the CampusNest assistant. Ask me how selling, renting or borrowing works.'],
 ];
