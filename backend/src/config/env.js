@@ -9,6 +9,7 @@ const env = {
     .filter(Boolean),
 
   databaseUrl: process.env.DATABASE_URL || '',
+  resetDatabaseOnStartup: process.env.RESET_DATABASE_ON_STARTUP === 'true',
 
   jwtSecret: process.env.SECRET_KEY || 'campusnest-secret-key',
   jwtAlgorithm: process.env.ALGORITHM || 'HS256',

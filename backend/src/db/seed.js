@@ -92,10 +92,15 @@ async function seed() {
   console.log(`✅ ${created} listings added (${listingsData.length - created} already existed)`);
   console.log(`🔑 Demo password for all seeded accounts: ${DEMO_PASSWORD} (local development only)`);
 
-  await pool.end();
 }
 
-seed().catch((err) => {
-  console.error('Seed failed:', err);
-  process.exit(1);
-});
+module.exports = { seed };
+
+if (require.main === module) {
+  seed()
+    .then(() => pool.end())
+    .catch((err) => {
+      console.error('Seed failed:', err);
+      process.exit(1);
+    });
+}

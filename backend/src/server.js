@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const env = require('./config/env');
 const { initDb } = require('./db/init');
+const { resetDatabase } = require('./db/reset');
 const { initRealtime } = require('./services/realtime.service');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler.middleware');
 
@@ -47,7 +48,12 @@ app.use(errorHandler);
 
 async function start() {
   try {
-    await initDb();
+    if (env.resetDatabaseOnStartup) {
+      console.warn('[startup] RESET_DATABASE_ON_STARTUP is enabled; clearing and reseeding the database.');
+      await resetDatabase();
+    } else {
+      await initDb();
+    }
   } catch (err) {
     console.error('[startup] Failed to initialize database schema:', err.message);
     process.exit(1);
