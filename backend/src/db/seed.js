@@ -53,8 +53,9 @@ async function findOrCreateUser(u) {
   if (existing.length > 0) return existing[0];
 
   const { rows } = await pool.query(
-    `INSERT INTO users (name, email, password, department, school, semester, enrollment_no)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    `INSERT INTO users
+       (name, email, password, department, school, semester, enrollment_no, email_verified)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE) RETURNING *`,
     [u.name, u.email, hashPassword(DEMO_PASSWORD), u.department, u.school, u.semester, u.enrollment_no]
   );
   return rows[0];

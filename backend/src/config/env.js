@@ -10,6 +10,12 @@ const env = {
 
   databaseUrl: process.env.DATABASE_URL || '',
   resetDatabaseOnStartup: process.env.RESET_DATABASE_ON_STARTUP === 'true',
+  appUrl: (process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/+$/, ''),
+  smtpHost: process.env.SMTP_HOST || process.env.SMTP_Host || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || process.env.SMTP_Port || '587', 10),
+  smtpUser: process.env.SMTP_USER || process.env.SMTP_User || '',
+  smtpPassword: process.env.SMTP_PASSWORD || process.env.SMTP_Password || '',
+  smtpFrom: process.env.SMTP_FROM || process.env.SMTP_USER || process.env.SMTP_User || '',
 
   jwtSecret: process.env.SECRET_KEY || 'campusnest-secret-key',
   jwtAlgorithm: process.env.ALGORITHM || 'HS256',

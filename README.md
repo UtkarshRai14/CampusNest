@@ -70,11 +70,15 @@ The frontend calls `http://127.0.0.1:8000` by default. Set `VITE_API_URL` to cha
 | `PORT` | API port (default `8000`) |
 | `GEMINI_API_KEY` | Enables ARIA. Without it ARIA answers with generic fallback text. |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Needed to upload listing photos. Listings without a photo work without them. |
+| `APP_URL` | Public frontend URL used in email verification links. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | SMTP settings used to send account verification emails. |
 | `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT settings (defaults `HS256`, `10080`) |
 
 ### Demo data
 
 `npm run seed` is safe to run more than once. It creates 8 demo students (for example `arjun@iiitsonepat.ac.in`), sample listings, and one admin account, `admin@campusnest.com`. All seeded accounts use the password `demo1234`. This is for local development only.
+
+New registrations must verify their college email before logging in. The verification link expires after 24 hours. Configure the SMTP variables above in the deployed backend; without them, registration is rejected rather than creating an account that cannot be verified.
 
 ## Deployment
 

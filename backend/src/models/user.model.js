@@ -17,14 +17,53 @@ async function findById(id) {
   return rows[0] || null;
 }
 
-async function create({ name, email, password, phone, department, school, semester, enrollmentNo }) {
+async function create({
+  name, email, password, phone, department, school, semester, enrollmentNo,
+  emailVerificationTokenHash, emailVerificationExpiresAt,
+}) {
   const { rows } = await pool.query(
-    `INSERT INTO users (name, email, password, phone, department, school, semester, enrollment_no)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO users
+      (name, email, password, phone, department, school, semester, enrollment_no,
+       email_verified, email_verification_token_hash, email_verification_expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE, $9, $10)
      RETURNING *`,
-    [name, email, password, phone || null, department, school, semester, enrollmentNo]
+    [name, email, password, phone || null, department, school, semester, enrollmentNo,
+      emailVerificationTokenHash, emailVerificationExpiresAt]
   );
   return rows[0];
+}
+
+async function markEmailVerified(id) {
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET email_verified = TRUE, email_verification_token_hash = NULL,
+         email_verification_expires_at = NULL
+     WHERE id = $1
+     RETURNING *`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
+async function findByVerificationTokenHash(tokenHash) {
+  const { rows } = await pool.query(
+    `SELECT * FROM users
+     WHERE email_verification_token_hash = $1
+       AND email_verification_expires_at > (NOW() AT TIME ZONE 'utc')`,
+    [tokenHash]
+  );
+  return rows[0] || null;
+}
+
+async function updateVerificationToken(id, tokenHash, expiresAt) {
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET email_verification_token_hash = $2, email_verification_expires_at = $3
+     WHERE id = $1
+     RETURNING *`,
+    [id, tokenHash, expiresAt]
+  );
+  return rows[0] || null;
 }
 
 async function updateProfile(id, { name, phone, semester, whatsapp }) {
@@ -82,6 +121,9 @@ module.exports = {
   findByEnrollmentNo,
   findById,
   create,
+  markEmailVerified,
+  findByVerificationTokenHash,
+  updateVerificationToken,
   updateProfile,
   findAll,
   countAll,

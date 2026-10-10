@@ -24,6 +24,10 @@ async function initDb() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_enrollment_no_key ON users (UPPER(enrollment_no));`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR;`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`);
+  // Existing accounts remain usable; only newly registered accounts require verification.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_hash VARCHAR;`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP;`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS listings (

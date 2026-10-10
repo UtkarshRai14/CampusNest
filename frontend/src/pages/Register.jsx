@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import API from '../api/axios'
-import useAuthStore from '../store/authStore'
 
 const COLLEGE_EMAIL_DOMAIN = 'iiitsonepat.ac.in'
 
@@ -26,7 +25,6 @@ export default function Register() {
     name: '', email: '', password: '', confirm: '',
     school_id: '', school_name: '', department: '', semester: '', enrollment_no: '',
   })
-  const { login } = useAuthStore()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -70,9 +68,8 @@ export default function Register() {
 
     try {
       const res = await API.post('/users/register', payload)
-      login(res.data.user, res.data.access_token)
-      toast.success('Welcome to CampusNest! 🎓')
-      navigate('/')
+      toast.success(res.data.message)
+      navigate('/verify-email')
     } catch (err) {
       const detail = err.response?.data?.detail
       if (typeof detail === 'string') {

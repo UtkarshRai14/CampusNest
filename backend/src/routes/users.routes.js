@@ -7,6 +7,8 @@ const router = express.Router();
 
 router.post('/register', asyncHandler(usersController.register));
 router.post('/login', asyncHandler(usersController.login));
+router.get('/verify-email', asyncHandler(usersController.verifyEmail));
+router.post('/resend-verification', asyncHandler(usersController.resendVerification));
 router.get('/me', authenticate, asyncHandler(usersController.getMe));
 router.put('/me', authenticate, asyncHandler(usersController.updateMe));
 
