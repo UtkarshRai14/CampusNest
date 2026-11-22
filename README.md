@@ -43,7 +43,6 @@ createdb campusnest
 cd backend
 npm install
 cp .env.example .env             # then fill in the values below
-npm run seed                     # optional demo data
 npm run dev                      # http://localhost:8000
 ```
 
@@ -74,10 +73,6 @@ The frontend calls `http://127.0.0.1:8000` by default. Set `VITE_API_URL` to cha
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | SMTP settings used to send account verification emails. |
 | `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT settings (defaults `HS256`, `10080`) |
 
-### Demo data
-
-`npm run seed` is safe to run more than once. It creates 8 demo students (for example `arjun@iiitsonepat.ac.in`), sample listings, and one admin account, `admin@campusnest.com`. All seeded accounts use the password `demo1234`. This is for local development only.
-
 New registrations must verify their college email before logging in. The verification link expires after 24 hours. Configure the SMTP variables above in the deployed backend; without them, registration is rejected rather than creating an account that cannot be verified.
 
 ## Deployment
@@ -92,7 +87,7 @@ The frontend and backend deploy automatically on a push to `main`.
 
 - **Backend**: build `npm ci`, start `npm start`, health check `/health`, `NODE_VERSION=22`, `NODE_ENV=production`. Set the variables from the table above; `CLIENT_URL` is the Vercel URL. The schema is created on startup.
 - **Frontend**: `VITE_API_URL` in the Vercel project settings is the backend URL. It is read at build time, so redeploy after changing it.
-- **Database**: Neon's connection string, with `sslmode=verify-full`. The live database was seeded with the demo data; its admin account has its own password, not `demo1234`.
+- **Database**: Neon's connection string, with `sslmode=verify-full`.
 
 Free Render services sleep after 15 minutes without traffic, so the first request after a quiet period takes about a minute. While that happens the frontend shows a "Waking up the server" notice (`ServerStatusBanner`), driven by the backend's `/health` endpoint.
 
@@ -107,7 +102,7 @@ Free Render services sleep after 15 minutes without traffic, so the first reques
 
 - Messaging has no online/typing status. Live updates need the backend to run as a long-lived server (Socket.IO shares the API's port), not as serverless functions.
 - Only `@iiitsonepat.ac.in` email addresses can register (`COLLEGE_EMAIL_DOMAIN` in `backend/src/config/constants.js` and `frontend/src/pages/Register.jsx`). The domain is checked, but the address itself is not verified, and there is no password reset.
-- The JWT is kept in `localStorage`. Admin accounts can only be created in the database (the seed script does this).
+- The JWT is kept in `localStorage`. Admin accounts can only be created in the database.
 - Photo upload needs Cloudinary credentials.
 - A listing priced at exactly ₹1 is shown as "Negotiable" in the UI.
 - There are no automated tests in this repository.
