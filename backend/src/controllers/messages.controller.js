@@ -55,8 +55,11 @@ async function sendMessage(req, res) {
   if (!listing) throw new HttpError(404, 'Listing not found');
 
   const { senderIsSeller } = await assertCanMessage(listing, req.user.id, receiverId);
-  const isFirstContact = !senderIsSeller
-    && (await messageModel.countBetween(listingId, req.user.id, receiverId)) === 0;
+  const existingMessageCount = await messageModel.countBetween(listingId, req.user.id, receiverId);
+  if (!senderIsSeller && listing.availability_status !== 'available' && existingMessageCount === 0) {
+    throw new HttpError(403, 'This listing is no longer accepting new enquiries');
+  }
+  const isFirstContact = !senderIsSeller && existingMessageCount === 0;
 
   const newMessage = messageToDict(await messageModel.create({
     content, senderId: req.user.id, listingId, receiverId,

@@ -9,11 +9,11 @@ async function getStats(req, res) {
   const { rows } = await pool.query(`
     SELECT
       (SELECT COUNT(*)::int FROM users) AS total_users,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE) AS total_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'sell') AS sell_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'rent') AS rent_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'borrow') AS borrow_listings,
-      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND listing_type = 'swap') AS swap_listings
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND availability_status = 'available') AS total_listings,
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND availability_status = 'available' AND listing_type = 'sell') AS sell_listings,
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND availability_status = 'available' AND listing_type = 'rent') AS rent_listings,
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND availability_status = 'available' AND listing_type = 'borrow') AS borrow_listings,
+      (SELECT COUNT(*)::int FROM listings WHERE is_active = TRUE AND availability_status = 'available' AND listing_type = 'swap') AS swap_listings
   `);
   return res.json(rows[0]);
 }
@@ -21,7 +21,7 @@ async function getStats(req, res) {
 async function getAllUsers(req, res) {
   const users = await userModel.findAll();
   const { rows: counts } = await pool.query(
-    'SELECT seller_id, COUNT(*)::int AS count FROM listings WHERE is_active = TRUE GROUP BY seller_id'
+"SELECT seller_id, COUNT(*)::int AS count FROM listings WHERE is_active = TRUE AND availability_status = 'available' GROUP BY seller_id"
   );
   const countBySeller = new Map(counts.map((c) => [c.seller_id, c.count]));
 
@@ -40,7 +40,7 @@ async function getAllUsers(req, res) {
 }
 
 async function getAllListings(req, res) {
-  const listings = await listingModel.findAllActive();
+  const listings = await listingModel.findAllActiveForAdmin();
   return res.json(listings.map((l) => ({
     id: l.id,
     title: l.title,
@@ -48,6 +48,7 @@ async function getAllListings(req, res) {
     listing_type: l.listing_type,
     price: l.price,
     condition: l.condition,
+    availability_status: l.availability_status || 'available',
     seller_id: l.seller_id,
     created_at: l.created_at,
   })));

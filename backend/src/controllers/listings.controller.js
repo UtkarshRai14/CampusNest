@@ -24,6 +24,7 @@ function toListingDict(listing, includeContact) {
     semester_tag: listing.semester_tag,
     image_url: listing.image_url,
     is_active: listing.is_active,
+    availability_status: listing.availability_status || 'available',
     seller_id: listing.seller_id,
     seller_name: listing.seller_name || 'Student',
     seller_school: listing.seller_school || '',
@@ -130,6 +131,47 @@ async function updateListing(req, res) {
   return res.json(toListingDict(updated, true));
 }
 
+async function updateListingAvailability(req, res) {
+  const id = parseId(req.params.id, 'Listing id');
+  const listing = await listingModel.findByIdAny(id);
+  if (!listing) throw new HttpError(404, 'Listing not found');
+  if (listing.seller_id !== req.user.id) throw new HttpError(403, 'Not your listing');
+
+  const body = req.body || {};
+  const status = parseText(body.availability_status, 'Availability status', { max: 20 }).toLowerCase();
+  const current = listing.availability_status || 'available';
+
+  const allowedByType = {
+    sell: ['available', 'sold'],
+    rent: ['available', 'rented'],
+    borrow: ['available', 'borrowed'],
+    swap: ['available', 'completed'],
+  };
+  if (!allowedByType[listing.listing_type]?.includes(status)) {
+    throw new HttpError(400, 'Status is not valid for this listing type');
+  }
+
+  let validTransition = false;
+  if (status === current) {
+    validTransition = true;
+  } else if (listing.listing_type === 'sell') {
+    validTransition = current === 'available' && status === 'sold';
+  } else if (listing.listing_type === 'rent') {
+    validTransition = (current === 'available' && status === 'rented')
+      || (current === 'rented' && status === 'available');
+  } else if (listing.listing_type === 'borrow') {
+    validTransition = (current === 'available' && status === 'borrowed')
+      || (current === 'borrowed' && status === 'available');
+  } else if (listing.listing_type === 'swap') {
+    validTransition = current === 'available' && status === 'completed';
+  }
+
+  if (!validTransition) throw new HttpError(400, 'Invalid availability transition');
+
+  const updated = await listingModel.updateAvailabilityStatus(id, status);
+  return res.json(toListingDict(updated, true));
+}
+
 async function deleteListing(req, res) {
   const id = parseId(req.params.id, 'Listing id');
   const listing = await listingModel.findById(id);
@@ -146,5 +188,6 @@ module.exports = {
   getMyListings,
   getListing,
   updateListing,
+  updateListingAvailability,
   deleteListing,
 };

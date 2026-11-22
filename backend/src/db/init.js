@@ -43,9 +43,29 @@ async function initDb() {
       semester_tag INTEGER,
       image_url VARCHAR,
       is_active BOOLEAN DEFAULT TRUE,
+      availability_status VARCHAR NOT NULL DEFAULT 'available',
       seller_id INTEGER REFERENCES users(id),
       created_at TIMESTAMP DEFAULT (NOW() AT TIME ZONE 'utc')
     );
+  `);
+
+  // Safe, idempotent migration for databases created before availability tracking.
+  await pool.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS availability_status VARCHAR;`);
+  await pool.query(`UPDATE listings SET availability_status = 'available' WHERE availability_status IS NULL OR availability_status NOT IN ('available', 'sold', 'rented', 'borrowed', 'completed');`);
+  await pool.query(`ALTER TABLE listings ALTER COLUMN availability_status SET DEFAULT 'available';`);
+  await pool.query(`ALTER TABLE listings ALTER COLUMN availability_status SET NOT NULL;`);
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'listings_availability_status_check'
+      ) THEN
+        ALTER TABLE listings
+          ADD CONSTRAINT listings_availability_status_check
+          CHECK (availability_status IN ('available', 'sold', 'rented', 'borrowed', 'completed'));
+      END IF;
+    END $$;
   `);
 
   await pool.query(`

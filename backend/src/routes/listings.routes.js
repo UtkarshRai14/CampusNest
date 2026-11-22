@@ -12,6 +12,7 @@ router.get('/', optionalAuthenticate, asyncHandler(listingsController.getListing
 router.get('/my-listings', authenticate, asyncHandler(listingsController.getMyListings));
 
 router.get('/:id', optionalAuthenticate, asyncHandler(listingsController.getListing));
+router.put('/:id/availability', authenticate, asyncHandler(listingsController.updateListingAvailability));
 router.put('/:id', authenticate, asyncHandler(listingsController.updateListing));
 router.delete('/:id', authenticate, asyncHandler(listingsController.deleteListing));
 

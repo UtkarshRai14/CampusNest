@@ -81,9 +81,9 @@ async function seed() {
     const { rowCount } = await pool.query(
       `INSERT INTO listings
         (title, description, price, condition, category, listing_type,
-         department_tag, semester_tag, image_url, seller_id, is_active)
+         department_tag, semester_tag, image_url, seller_id, is_active, availability_status)
        SELECT $1::varchar, $2::text, $3::double precision, $4::int, $5::varchar, $6::varchar,
-              $7::varchar, $8::int, $9::varchar, $10::int, TRUE
+              $7::varchar, $8::int, $9::varchar, $10::int, TRUE, 'available'
        WHERE NOT EXISTS (SELECT 1 FROM listings WHERE title = $1::varchar AND seller_id = $10::int)`,
       [l.title, l.description, l.price, l.condition, l.category, l.listing_type,
         seller.department, seller.semester, l.image_url, seller.id]

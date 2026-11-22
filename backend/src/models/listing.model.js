@@ -21,8 +21,8 @@ async function create({
   const { rows } = await pool.query(
     `INSERT INTO listings
       (title, description, price, condition, category, listing_type,
-       department_tag, semester_tag, image_url, seller_id, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE)
+       department_tag, semester_tag, image_url, seller_id, is_active, availability_status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,'available')
      RETURNING id`,
     [title, description || null, price, condition, category, listingType,
       departmentTag || null, semesterTag || null, imageUrl || null, sellerId]
@@ -55,7 +55,7 @@ async function findMany(filters) {
     skip = 0, limit = 50,
   } = filters;
 
-  const clauses = ['l.is_active = TRUE'];
+  const clauses = ["l.is_active = TRUE", "l.availability_status = 'available'"]
   const values = [];
   let i = 1;
 
@@ -122,20 +122,20 @@ async function hardDelete(id) {
 }
 
 async function countAll() {
-  const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM listings WHERE is_active = TRUE');
+  const { rows } = await pool.query("SELECT COUNT(*)::int AS count FROM listings WHERE is_active = TRUE AND availability_status = 'available'");
   return rows[0].count;
 }
 
 async function countDistinctCategories() {
   const { rows } = await pool.query(
-    'SELECT COUNT(DISTINCT category)::int AS count FROM listings WHERE is_active = TRUE'
+    "SELECT COUNT(DISTINCT category)::int AS count FROM listings WHERE is_active = TRUE AND availability_status = 'available'"
   );
   return rows[0].count;
 }
 
 async function averagePrice() {
   const { rows } = await pool.query(
-    'SELECT COALESCE(AVG(price), 0) AS avg FROM listings WHERE is_active = TRUE'
+    "SELECT COALESCE(AVG(price), 0) AS avg FROM listings WHERE is_active = TRUE AND availability_status = 'available'"
   );
   return parseFloat(rows[0].avg);
 }
@@ -143,13 +143,28 @@ async function averagePrice() {
 async function countByCategory() {
   const { rows } = await pool.query(
     `SELECT category, COUNT(*)::int AS count
-     FROM listings WHERE is_active = TRUE
+     FROM listings WHERE is_active = TRUE AND availability_status = 'available'
      GROUP BY category ORDER BY count DESC`
   );
   return rows;
 }
 
+async function updateAvailabilityStatus(id, availabilityStatus) {
+  await pool.query(
+    'UPDATE listings SET availability_status = $1 WHERE id = $2',
+    [availabilityStatus, id]
+  );
+  return findByIdAny(id);
+}
+
 async function findAllActive() {
+  const { rows } = await pool.query(
+    `${SELECT_WITH_SELLER} WHERE l.is_active = TRUE AND l.availability_status = 'available' ORDER BY l.created_at DESC`
+  );
+  return rows;
+}
+
+async function findAllActiveForAdmin() {
   const { rows } = await pool.query(
     `${SELECT_WITH_SELLER} WHERE l.is_active = TRUE ORDER BY l.created_at DESC`
   );
@@ -163,6 +178,7 @@ module.exports = {
   findBySeller,
   findMany,
   updateFields,
+  updateAvailabilityStatus,
   softDelete,
   hardDelete,
   countAll,
@@ -170,4 +186,5 @@ module.exports = {
   averagePrice,
   countByCategory,
   findAllActive,
+  findAllActiveForAdmin,
 };
