@@ -45,8 +45,12 @@ export default function Analytics() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
+    if (!isAuthenticated || !user?.is_admin) {
+      navigate('/', { replace: true })
+      return
+    }
     fetchData()
-  }, [])
+  }, [isAuthenticated, user?.is_admin, navigate])
 
   const fetchData = async () => {
     setLoading(true)

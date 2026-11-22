@@ -105,6 +105,15 @@ function ListingCard({ item, index }) {
             </div>
 
             <div style={{
+              position: 'absolute', bottom: 10, left: 10,
+              background: item.availability_status === 'available' ? '#E8FBF8' : '#FFF0F0',
+              color: item.availability_status === 'available' ? '#00A896' : '#E05555',
+              borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 800,
+            }}>
+              {(item.availability_status || 'available').replace('_', ' ').toUpperCase()}
+            </div>
+
+            <div style={{
               position: 'absolute', top: 10, right: 10,
               background: 'rgba(255,255,255,0.92)',
               borderRadius: 20, padding: '3px 10px',

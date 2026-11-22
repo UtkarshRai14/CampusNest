@@ -20,7 +20,7 @@ import socket from './api/socket'
 import useAuthStore from './store/authStore'
 
 export default function App() {
-  const { isAuthenticated, token, updateUser } = useAuthStore()
+  const { isAuthenticated, token, user, updateUser } = useAuthStore()
 
   // Keep the stored user (WhatsApp number, admin flag) in sync with the server.
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function App() {
         <Route path="/listings/:id" element={<ListingDetail />} />
         <Route path="/post" element={<PostListing />} />
         <Route path="/messages" element={<Messages />} />
-        <Route path="/analytics" element={<Analytics />} />
+        <Route path="/analytics" element={isAuthenticated && user?.is_admin ? <Analytics /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" replace />} />

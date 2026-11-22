@@ -17,6 +17,7 @@ export default function Profile() {
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState({ title: '', description: '', price: '', condition: 3 })
   const [savingEdit, setSavingEdit] = useState(false)
+  const [recommendations, setRecommendations] = useState([])
 
   const loadListings = () => {
     setLoading(true)
@@ -30,6 +31,11 @@ export default function Profile() {
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return }
     loadListings()
+    if (user?.id) {
+      API.get(`/analytics/recommendations/${user.id}`)
+        .then(r => setRecommendations(Array.isArray(r.data?.recommendations) ? r.data.recommendations : []))
+        .catch(() => setRecommendations([]))
+    }
   }, [])
 
   // The saved number can arrive after the page opens (the app refreshes the user on load).
@@ -42,6 +48,14 @@ export default function Profile() {
       setMyListings(prev => prev.filter(l => l.id !== id))
       toast.success('Listing deleted')
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to delete') }
+  }
+
+  const updateAvailability = async (id, status) => {
+    try {
+      const res = await API.put(`/listings/${id}/availability`, { availability_status: status })
+      setMyListings(prev => prev.map(l => (l.id === id ? res.data : l)))
+      toast.success('Availability updated')
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to update availability') }
   }
 
   const saveWhatsApp = async () => {
@@ -151,7 +165,7 @@ export default function Profile() {
         </motion.div>
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#fff', borderRadius: 12, padding: 6, border: '1px solid #D0F5F0', width: 'fit-content' }}>
-          {[['listings', '📦 My Listings'], ['stats', '📊 Stats']].map(([key, label]) => (
+          {[['listings', '📦 My Listings'], ['recommendations', '✨ Recommendations'], ['stats', '📊 Stats']].map(([key, label]) => (
             <button key={key} onClick={() => setActiveTab(key)} style={{ padding: '8px 22px', borderRadius: 8, border: 'none', cursor: 'pointer', background: activeTab === key ? 'linear-gradient(135deg, #00C9B1, #00A896)' : 'transparent', color: activeTab === key ? '#fff' : '#4A6572', fontWeight: 600, fontSize: 14 }}>
               {label}
             </button>
@@ -232,8 +246,34 @@ export default function Profile() {
                         </span>
                         <span style={{ fontSize: 12, color: '#7A9BA8' }}>{item.category}</span>
                         <span style={{ fontSize: 12, color: '#7A9BA8' }}>⭐ {item.condition}/5</span>
+                        <span style={{
+                          fontSize: 12, padding: '2px 10px', borderRadius: 20, fontWeight: 700,
+                          background: item.availability_status === 'available' ? '#E8FBF8' : '#FFF0F0',
+                          color: item.availability_status === 'available' ? '#00A896' : '#E05555',
+                        }}>{item.availability_status?.replace('_', ' ').toUpperCase()}</span>
                       </div>
                     </div>
+                    {item.listing_type === 'sell' ? (
+                      <select value={item.availability_status || 'available'} onChange={e => updateAvailability(item.id, e.target.value)} disabled={item.availability_status === 'sold'}
+                        style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #D0ECE8', color: '#4A6572', background: '#fff', fontWeight: 600, fontSize: 12 }}>
+                        <option value="available">Available</option><option value="sold">Sold</option>
+                      </select>
+                    ) : item.listing_type === 'rent' ? (
+                      <select value={item.availability_status || 'available'} onChange={e => updateAvailability(item.id, e.target.value)}
+                        style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #D0ECE8', color: '#4A6572', background: '#fff', fontWeight: 600, fontSize: 12 }}>
+                        <option value="available">Available</option><option value="rented">Rented</option>
+                      </select>
+                    ) : item.listing_type === 'borrow' ? (
+                      <select value={item.availability_status || 'available'} onChange={e => updateAvailability(item.id, e.target.value)}
+                        style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #D0ECE8', color: '#4A6572', background: '#fff', fontWeight: 600, fontSize: 12 }}>
+                        <option value="available">Available</option><option value="borrowed">Borrowed</option>
+                      </select>
+                    ) : (
+                      <select value={item.availability_status || 'available'} onChange={e => updateAvailability(item.id, e.target.value)} disabled={item.availability_status === 'completed'}
+                        style={{ padding: '7px 10px', borderRadius: 8, border: '1.5px solid #D0ECE8', color: '#4A6572', background: '#fff', fontWeight: 600, fontSize: 12 }}>
+                        <option value="available">Available</option><option value="completed">Completed</option>
+                      </select>
+                    )}
                     <div style={{ fontWeight: 800, color: '#00A896', fontSize: 18 }}>₹{item.price}</div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Link to={'/listings/' + item.id} style={{ padding: '7px 16px', borderRadius: 8, textDecoration: 'none', border: '1.5px solid #D0ECE8', color: '#00A896', fontWeight: 600, fontSize: 13 }}>View</Link>
@@ -246,6 +286,31 @@ export default function Profile() {
                 ))}
               </div>
             )}
+          </motion.div>
+        )}
+
+        {activeTab === 'recommendations' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div style={{ background: '#fff', borderRadius: 20, padding: 24, border: '1px solid #D0F5F0' }}>
+              <h3 style={{ color: '#0D2B35', fontWeight: 800, marginBottom: 6 }}>✨ Recommended for You</h3>
+              <p style={{ color: '#7A9BA8', fontSize: 13, marginBottom: 18 }}>Based on your department, semester and listing recency</p>
+              {recommendations.length === 0 ? (
+                <p style={{ color: '#7A9BA8' }}>No recommendations available right now.</p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))', gap: 14 }}>
+                  {recommendations.map(item => (
+                    <Link key={item.id} to={`/listings/${item.id}`} style={{ textDecoration: 'none', background: '#F8FFFE', borderRadius: 14, padding: 16, border: '1px solid #D0F5F0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: '#E8FBF8', color: '#00A896', fontWeight: 700 }}>{item.listing_type?.toUpperCase()}</span>
+                        <span style={{ color: '#00A896', fontWeight: 800 }}>₹{item.price}</span>
+                      </div>
+                      <div style={{ color: '#0D2B35', fontWeight: 700, fontSize: 14 }}>{item.title}</div>
+                      <div style={{ color: '#7A9BA8', fontSize: 12, marginTop: 4 }}>{item.category}</div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
 

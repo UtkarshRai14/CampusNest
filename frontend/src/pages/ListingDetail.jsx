@@ -157,9 +157,14 @@ export default function ListingDetail() {
 
             <div style={{ background: '#fff', borderRadius: 20, padding: 28, border: '1px solid #D0F5F0', boxShadow: '0 4px 20px rgba(0,201,177,0.08)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <span style={{ padding: '4px 14px', borderRadius: 20, background: tc.bg, color: tc.color, fontWeight: 700, fontSize: 13 }}>
-                  {listing.listing_type?.toUpperCase()}
-                </span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ padding: '4px 14px', borderRadius: 20, background: tc.bg, color: tc.color, fontWeight: 700, fontSize: 13 }}>
+                    {listing.listing_type?.toUpperCase()}
+                  </span>
+                  <span style={{ padding: '4px 14px', borderRadius: 20, background: listing.availability_status === 'available' ? '#E8FBF8' : '#FFF0F0', color: listing.availability_status === 'available' ? '#00A896' : '#E05555', fontWeight: 800, fontSize: 12 }}>
+                    {(listing.availability_status || 'available').replace('_', ' ').toUpperCase()}
+                  </span>
+                </div>
                 <span style={{ fontSize: 12, color: '#7A9BA8' }}>{'⭐'.repeat(listing.condition)}</span>
               </div>
               <h1 style={{ fontSize: 20, fontWeight: 900, color: '#0D2B35', marginBottom: 12, lineHeight: 1.3 }}>{listing.title}</h1>

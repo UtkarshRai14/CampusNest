@@ -40,8 +40,10 @@ export default function Navbar() {
     { to: '/', label: 'Home' },
     { to: '/listings', label: 'Browse' },
     { to: '/messages', label: 'Messages', badge: unreadCount },
-    { to: '/analytics', label: 'Analytics' },
-    ...(user?.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
+    ...(user?.is_admin ? [
+      { to: '/analytics', label: 'Analytics' },
+      { to: '/admin', label: 'Admin' },
+    ] : []),
   ]
 
   const linkStyle = (path) => ({
