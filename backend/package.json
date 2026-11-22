@@ -9,8 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "seed": "node src/db/seed.js"
+    "dev": "node --watch src/server.js"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",

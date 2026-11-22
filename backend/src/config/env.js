@@ -9,7 +9,6 @@ const env = {
     .filter(Boolean),
 
   databaseUrl: process.env.DATABASE_URL || '',
-  resetDatabaseOnStartup: process.env.RESET_DATABASE_ON_STARTUP === 'true',
   appUrl: (process.env.APP_URL || process.env.CLIENT_URL || 'http://localhost:5173').split(',')[0].trim().replace(/\/+$/, ''),
   smtpHost: process.env.SMTP_HOST || process.env.SMTP_Host || '',
   smtpPort: parseInt(process.env.SMTP_PORT || process.env.SMTP_Port || '587', 10),
