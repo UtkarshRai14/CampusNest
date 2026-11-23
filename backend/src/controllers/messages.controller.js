@@ -4,11 +4,17 @@ const listingModel = require('../models/listing.model');
 const realtime = require('../services/realtime.service');
 const HttpError = require('../utils/HttpError');
 const { parseText, parseId } = require('../utils/validators');
+const { rejectsNewBuyerEnquiry } = require('../utils/messageRules');
+const { sanitizeAutomaticReply } = require('../utils/contactPrivacy');
 
 function messageToDict(msg) {
   return {
     id: msg.id,
-    content: msg.content,
+    content: sanitizeAutomaticReply(msg.content, {
+      isSellerMessage: msg.sender_id === msg.listing_seller_id,
+      shareEmail: Boolean(msg.listing_seller_share_email),
+      shareWhatsapp: Boolean(msg.listing_seller_share_whatsapp),
+    }),
     sender_id: msg.sender_id,
     sender_name: msg.sender_name || 'Unknown',
     receiver_id: msg.receiver_id,
@@ -56,7 +62,7 @@ async function sendMessage(req, res) {
 
   const { senderIsSeller } = await assertCanMessage(listing, req.user.id, receiverId);
   const existingMessageCount = await messageModel.countBetween(listingId, req.user.id, receiverId);
-  if (!senderIsSeller && listing.availability_status !== 'available' && existingMessageCount === 0) {
+  if (rejectsNewBuyerEnquiry({ listing, senderIsSeller, existingMessageCount })) {
     throw new HttpError(403, 'This listing is no longer accepting new enquiries');
   }
   const isFirstContact = !senderIsSeller && existingMessageCount === 0;
@@ -68,8 +74,13 @@ async function sendMessage(req, res) {
 
   if (isFirstContact) {
     const seller = await userModel.findById(receiverId);
+    const privateAwareSeller = {
+      ...seller,
+      email: seller.share_email ? seller.email : '(not shared)',
+      whatsapp: seller.share_whatsapp ? seller.whatsapp : null,
+    };
     const autoReply = await messageModel.create({
-      content: buildAutoReply(req.user, seller, listing),
+      content: buildAutoReply(req.user, privateAwareSeller, listing),
       senderId: receiverId,
       listingId,
       receiverId: req.user.id,
@@ -81,53 +92,23 @@ async function sendMessage(req, res) {
 }
 
 async function getConversations(req, res) {
-  const messages = await messageModel.findAllForUser(req.user.id);
-
-  const userCache = new Map();
-  const listingCache = new Map();
-  const getUser = async (id) => {
-    if (!userCache.has(id)) userCache.set(id, await userModel.findById(id));
-    return userCache.get(id);
-  };
-  const getListing = async (id) => {
-    if (!listingCache.has(id)) listingCache.set(id, await listingModel.findByIdAny(id));
-    return listingCache.get(id);
-  };
-
-  const conversations = new Map();
-  for (const msg of messages) {
-    const otherUserId = msg.sender_id === req.user.id ? msg.receiver_id : msg.sender_id;
-    const key = `${Math.min(req.user.id, otherUserId)}_${Math.max(req.user.id, otherUserId)}_${msg.listing_id}`;
-
-    if (!conversations.has(key)) {
-      const otherUser = await getUser(otherUserId);
-      const listing = await getListing(msg.listing_id);
-      conversations.set(key, {
-        conversation_id: key,
-        other_user_id: otherUserId,
-        other_user_name: otherUser ? otherUser.name : 'Unknown',
-        other_user_email: otherUser ? otherUser.email : '',
-        other_user_whatsapp: otherUser ? (otherUser.whatsapp || null) : null,
-        listing_id: msg.listing_id,
-        listing_title: listing ? listing.title : 'Unknown',
-        listing_seller_id: listing ? listing.seller_id : null,
-        listing_image: listing ? listing.image_url : null,
-        last_message: msg.content,
-        last_message_time: msg.created_at,
-        unread_count: 0,
-      });
-    }
-
-    const conv = conversations.get(key);
-    // Messages arrive oldest-first, so the last one seen is the latest.
-    conv.last_message = msg.content;
-    conv.last_message_time = msg.created_at;
-    if (msg.receiver_id === req.user.id && !msg.is_read) conv.unread_count += 1;
-  }
-
-  const sorted = Array.from(conversations.values())
-    .sort((a, b) => new Date(b.last_message_time) - new Date(a.last_message_time));
-  return res.json({ conversations: sorted });
+  const conversations = (await messageModel.findConversationSummaries(req.user.id)).map((conversation) => {
+    const {
+      last_message_sender_id: lastMessageSenderId,
+      listing_seller_share_email: shareEmail,
+      listing_seller_share_whatsapp: shareWhatsapp,
+      ...publicConversation
+    } = conversation;
+    return {
+      ...publicConversation,
+      last_message: sanitizeAutomaticReply(conversation.last_message, {
+        isSellerMessage: lastMessageSenderId === conversation.listing_seller_id,
+        shareEmail: Boolean(shareEmail),
+        shareWhatsapp: Boolean(shareWhatsapp),
+      }),
+    };
+  });
+  return res.json({ conversations });
 }
 
 async function getUnreadCount(req, res) {
@@ -144,9 +125,14 @@ async function markRead(listingId, readerId, otherUserId) {
 async function getMessages(req, res) {
   const listingId = parseId(req.params.listingId, 'Listing id');
   const otherUserId = parseId(req.params.otherUserId, 'User id');
-
+  const beforeId = req.query.before_id === undefined ? null : parseId(req.query.before_id, 'Message cursor');
+  const limit = req.query.limit === undefined ? 50 : parseId(req.query.limit, 'Limit');
+  if (limit > 100) throw new HttpError(400, 'Limit must be at most 100');
   await markRead(listingId, req.user.id, otherUserId);
-  const messages = await messageModel.findConversation(listingId, req.user.id, otherUserId);
+  const messages = await messageModel.findConversationPage(listingId, req.user.id, otherUserId, beforeId, limit);
+  res.set('X-Has-More', String(messages.length === limit));
+  res.set('X-Next-Before-Id', messages.length ? String(messages[0].id) : '');
+  res.set('Access-Control-Expose-Headers', 'X-Has-More, X-Next-Before-Id');
   return res.json(messages.map(messageToDict));
 }
 
@@ -162,9 +148,10 @@ async function markConversationRead(req, res) {
 async function deleteConversation(req, res) {
   const listingId = parseId(req.params.listingId, 'Listing id');
   const otherUserId = parseId(req.params.otherUserId, 'User id');
-  const deleted = await messageModel.deleteConversation(listingId, req.user.id, otherUserId);
-  await realtime.notifyMessagesDeleted(deleted);
-  return res.json({ message: 'Conversation deleted' });
+  const hidden = await messageModel.hideConversation(listingId, req.user.id, otherUserId);
+  if (!hidden) throw new HttpError(404, 'Conversation not found');
+  await realtime.notifyConversationHidden(req.user.id);
+  return res.json({ message: 'Conversation hidden from your inbox' });
 }
 
 module.exports = {

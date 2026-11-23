@@ -25,7 +25,7 @@ function initRealtime(httpServer) {
         return next();
       })
       .catch((err) => {
-        console.error('[realtime] Socket authentication failed:', err);
+        console.error('[realtime] Socket authentication failed:', err.code || err.name || 'authentication error');
         next(new Error('Could not validate credentials'));
       });
   });
@@ -77,10 +77,19 @@ function notifyMessagesDeleted(deletedMessages) {
   })));
 }
 
+function notifyConversationHidden(userId) {
+  return safely(async () => {
+    const unreadCount = await getUnreadCount(userId);
+    io.to(userRoom(userId)).emit('messages:deleted');
+    io.to(userRoom(userId)).emit('unread:count', { unread_count: unreadCount });
+  });
+}
+
 module.exports = {
   initRealtime,
   getUnreadCount,
   notifyNewMessage,
   notifyRead,
   notifyMessagesDeleted,
+  notifyConversationHidden,
 };

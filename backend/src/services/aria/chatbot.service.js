@@ -16,16 +16,16 @@ const LISTINGS_IN_CONTEXT = 20;
 
 async function getLiveListingsSummary() {
   try {
-    const listings = await listingModel.findAllActive();
+    const listings = await listingModel.findForAria(LISTINGS_IN_CONTEXT);
     if (listings.length === 0) return 'No listings available.';
 
     let summary = 'LIVE LISTINGS:\n';
-    for (const l of listings.slice(0, LISTINGS_IN_CONTEXT)) {
+    for (const l of listings) {
       summary += `- ${l.title} | ${l.category} | ${l.listing_type} | Rs.${l.price}\n`;
     }
     return summary;
   } catch (err) {
-    console.error(`ARIA could not load listings: ${err.message}`);
+    console.error('[aria] Listing context query failed:', err.code || err.name || 'database error');
     return 'Listings unavailable.';
   }
 }
@@ -38,7 +38,7 @@ async function loadHistory(userId) {
     if (firstUser === -1) return [];
     return rows.slice(firstUser).map((r) => ({ role: r.role, parts: [{ text: r.content }] }));
   } catch (err) {
-    console.error(`ARIA could not load chat history: ${err.message}`);
+    console.error('[aria] Chat history query failed:', err.code || err.name || 'database error');
     return [];
   }
 }
@@ -47,7 +47,7 @@ async function saveTurn(userId, userMessage, ariaReply) {
   try {
     await chatHistoryModel.saveTurn(userId, userMessage, ariaReply);
   } catch (err) {
-    console.error(`ARIA could not save chat history: ${err.message}`);
+    console.error('[aria] Chat history save failed:', err.code || err.name || 'database error');
   }
 }
 
@@ -73,7 +73,7 @@ function getFallbackResponse(message) {
 async function chatWithAria(message, user = null) {
   try {
     const liveListings = await getLiveListingsSummary();
-    const student = user ? `[Student: ${user.name}, Dept: ${user.department}, Sem: ${user.semester}]\n` : '';
+    const student = user ? `[Department: ${user.department}, Semester: ${user.semester}]\n` : '';
     const currentTurn = `${student}[${liveListings}]\nQuestion: ${message}`;
 
     const history = user ? await loadHistory(user.id) : [];
@@ -94,7 +94,7 @@ async function chatWithAria(message, user = null) {
     if (user) await saveTurn(user.id, message, ariaReply);
     return ariaReply;
   } catch (err) {
-    console.error(`ARIA Error: ${err.message || err}`);
+    console.error('[aria] Request failed:', err.code || err.name || 'provider error');
     return getFallbackResponse(message);
   }
 }

@@ -1,5 +1,33 @@
 require('dotenv').config();
 
+const nodeEnv = process.env.NODE_ENV || 'development';
+const jwtAlgorithms = new Set(['HS256', 'HS384', 'HS512']);
+const jwtAlgorithm = process.env.ALGORITHM || 'HS256';
+const configuredExpiry = process.env.ACCESS_TOKEN_EXPIRE_MINUTES;
+const defaultExpiry = nodeEnv === 'production' ? 60 : 10080;
+const accessTokenExpireMinutes = configuredExpiry === undefined
+  ? defaultExpiry
+  : Number(configuredExpiry);
+const suppliedSecret = process.env.SECRET_KEY || '';
+const developmentSecret = 'campusnest-secret-key';
+const minimumSecretBytes = { HS256: 32, HS384: 48, HS512: 64 }[jwtAlgorithm];
+
+if (!jwtAlgorithms.has(jwtAlgorithm)) {
+  throw new Error('ALGORITHM must be one of HS256, HS384, or HS512.');
+}
+if (!Number.isInteger(accessTokenExpireMinutes) || accessTokenExpireMinutes < 5 || accessTokenExpireMinutes > 10080) {
+  throw new Error('ACCESS_TOKEN_EXPIRE_MINUTES must be an integer between 5 and 10080.');
+}
+if (nodeEnv === 'production' && (!suppliedSecret || suppliedSecret === developmentSecret || Buffer.byteLength(suppliedSecret) < minimumSecretBytes)) {
+  throw new Error(`Production requires a non-default SECRET_KEY of at least ${minimumSecretBytes} bytes for ${jwtAlgorithm}.`);
+}
+if (suppliedSecret === developmentSecret && !['development', 'test'].includes(nodeEnv)) {
+  throw new Error('The development SECRET_KEY is permitted only in development and test environments.');
+}
+if (!suppliedSecret && !['development', 'test'].includes(nodeEnv)) {
+  throw new Error('SECRET_KEY must be configured outside development and test environments.');
+}
+
 const env = {
   port: parseInt(process.env.PORT || '8000', 10),
   // Comma-separated, so the deployed frontend and local development can both be allowed.
@@ -16,9 +44,11 @@ const env = {
   smtpPassword: process.env.SMTP_PASSWORD || process.env.SMTP_Password || '',
   smtpFrom: process.env.SMTP_FROM || process.env.SMTP_USER || process.env.SMTP_User || '',
 
-  jwtSecret: process.env.SECRET_KEY || 'campusnest-secret-key',
-  jwtAlgorithm: process.env.ALGORITHM || 'HS256',
-  accessTokenExpireMinutes: parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES || '10080', 10),
+  nodeEnv,
+  jwtSecret: suppliedSecret || developmentSecret,
+  jwtAlgorithm,
+  accessTokenExpireMinutes,
+  trustedProxyCidrs: (process.env.TRUSTED_PROXY_CIDRS || '').split(',').map((value) => value.trim()).filter(Boolean),
 
   geminiApiKey: process.env.GEMINI_API_KEY || '',
 
@@ -27,14 +57,7 @@ const env = {
   cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET || '',
 };
 
-// The development default is public, so tokens signed with it can be forged.
-if (!process.env.SECRET_KEY) {
-  if (process.env.NODE_ENV === 'production') {
-    console.error('[config] SECRET_KEY must be set in production.');
-    process.exit(1);
-  }
-  console.warn('[config] SECRET_KEY is not set - using an insecure development default. Set it in .env.');
-}
+if (!suppliedSecret) console.warn('[config] SECRET_KEY is not set - using the development-only default. Set it in .env.');
 
 if (!env.databaseUrl) {
   console.warn('[config] DATABASE_URL is not set - database connections will fail.');

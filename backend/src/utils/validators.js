@@ -63,6 +63,7 @@ function parsePassword(value, { min, max }) {
   if (typeof value !== 'string' || value === '') throw badRequest('Password is required');
   if (value.length < min) throw badRequest(`Password must be at least ${min} characters`);
   if (value.length > max) throw badRequest(`Password must be at most ${max} characters`);
+  if (Buffer.byteLength(value, 'utf8') > 72) throw badRequest('Password must be at most 72 UTF-8 bytes');
   return value;
 }
 

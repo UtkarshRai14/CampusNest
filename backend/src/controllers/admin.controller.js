@@ -2,8 +2,9 @@ const userModel = require('../models/user.model');
 const listingModel = require('../models/listing.model');
 const pool = require('../db/pool');
 const realtime = require('../services/realtime.service');
+const cloudinaryService = require('../services/cloudinary.service');
 const HttpError = require('../utils/HttpError');
-const { parseId } = require('../utils/validators');
+const { parseId, parseText } = require('../utils/validators');
 
 async function getStats(req, res) {
   const { rows } = await pool.query(`
@@ -18,13 +19,35 @@ async function getStats(req, res) {
   return res.json(rows[0]);
 }
 
+function getPage(req) {
+  const limit = req.query.limit === undefined ? 50 : parseId(req.query.limit, 'Limit');
+  const page = req.query.page === undefined ? 1 : parseId(req.query.page, 'Page');
+  if (limit > 100) throw new HttpError(400, 'Limit must be at most 100');
+  if (page > 1000000) throw new HttpError(400, 'Page is too large');
+  return { limit, offset: (page - 1) * limit };
+}
+
+function setPageHeaders(res, total, { limit, offset }) {
+  res.set('X-Total-Count', String(total));
+  res.set('X-Page-Limit', String(limit));
+  res.set('X-Page-Offset', String(offset));
+  res.set('Access-Control-Expose-Headers', 'X-Total-Count, X-Page-Limit, X-Page-Offset');
+}
+
 async function getAllUsers(req, res) {
-  const users = await userModel.findAll();
+  const page = getPage(req);
+  const search = req.query.search === undefined ? '' : parseText(req.query.search, 'Search', { max: 100 });
+  const { rows: users, total } = await userModel.findAll({ ...page, search });
+  const userIds = users.map((user) => user.id);
   const { rows: counts } = await pool.query(
-"SELECT seller_id, COUNT(*)::int AS count FROM listings WHERE is_active = TRUE AND availability_status = 'available' GROUP BY seller_id"
+    `SELECT seller_id, COUNT(*)::int AS count FROM listings
+     WHERE is_active = TRUE AND availability_status = 'available' AND seller_id = ANY($1::int[])
+     GROUP BY seller_id`,
+    [userIds]
   );
   const countBySeller = new Map(counts.map((c) => [c.seller_id, c.count]));
 
+  setPageHeaders(res, total, page);
   return res.json(users.map((u) => ({
     id: u.id,
     name: u.name,
@@ -40,7 +63,10 @@ async function getAllUsers(req, res) {
 }
 
 async function getAllListings(req, res) {
-  const listings = await listingModel.findAllActiveForAdmin();
+  const page = getPage(req);
+  const search = req.query.search === undefined ? '' : parseText(req.query.search, 'Search', { max: 100 });
+  const { rows: listings, total } = await listingModel.findAllActiveForAdmin({ ...page, search });
+  setPageHeaders(res, total, page);
   return res.json(listings.map((l) => ({
     id: l.id,
     title: l.title,
@@ -58,9 +84,21 @@ async function deleteListing(req, res) {
   const id = parseId(req.params.id, 'Listing id');
   const listing = await listingModel.findByIdAny(id);
   if (!listing) throw new HttpError(404, 'Listing not found');
-  const deletedMessages = await listingModel.hardDelete(id);
-  await realtime.notifyMessagesDeleted(deletedMessages);
-  return res.json({ message: 'Listing deleted' });
+  const deletion = await listingModel.hardDelete(id);
+  if (!deletion) throw new HttpError(404, 'Listing not found');
+  await realtime.notifyMessagesDeleted(deletion.messages);
+  let imageCleanup = 'complete';
+  try {
+    const cleaned = await cloudinaryService.deleteListingImage(deletion.imageUrl);
+    if (!cleaned) imageCleanup = 'pending';
+  } catch {
+    imageCleanup = 'pending';
+  }
+  if (imageCleanup === 'pending') console.error('[cloudinary] Listing image cleanup failed; manual cleanup is required.');
+  return res.json({
+    message: imageCleanup === 'complete' ? 'Listing deleted' : 'Listing deleted; image cleanup could not be completed.',
+    image_cleanup: imageCleanup,
+  });
 }
 
 async function deleteUser(req, res) {
@@ -68,9 +106,15 @@ async function deleteUser(req, res) {
   if (id === req.user.id) throw new HttpError(400, 'You cannot delete your own account');
   const user = await userModel.findById(id);
   if (!user) throw new HttpError(404, 'User not found');
-  const deletedMessages = await userModel.deleteById(id);
-  await realtime.notifyMessagesDeleted(deletedMessages);
-  return res.json({ message: 'User deleted' });
+  const deletion = await userModel.deleteById(id);
+  await realtime.notifyMessagesDeleted(deletion.messages);
+  const cleanupResults = await Promise.allSettled(deletion.imageUrls.map((url) => cloudinaryService.deleteListingImage(url)));
+  const cleanupFailed = cleanupResults.some((result) => result.status === 'rejected' || result.value !== true);
+  if (cleanupFailed) console.error('[cloudinary] User listing image cleanup failed; manual cleanup is required.');
+  return res.json({
+    message: cleanupFailed ? 'User deleted; some listing image cleanup could not be completed.' : 'User deleted',
+    image_cleanup: cleanupFailed ? 'pending' : 'complete',
+  });
 }
 
 module.exports = { getStats, getAllUsers, getAllListings, deleteListing, deleteUser };

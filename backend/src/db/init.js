@@ -2,8 +2,8 @@ const pool = require('./pool');
 
 // Schema is created with CREATE TABLE IF NOT EXISTS and evolved with idempotent
 // ALTER statements, so it is safe to run on every startup (fresh or existing DB).
-async function initDb() {
-  await pool.query(`
+async function initDb(db = pool) {
+  await db.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       name VARCHAR NOT NULL,
@@ -18,18 +18,18 @@ async function initDb() {
     );
   `);
 
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS enrollment_no VARCHAR;`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS enrollment_no VARCHAR;`);
   // No two accounts share an enrollment number; case is ignored ("21cs001" = "21CS001").
   // Registration requires one, but accounts created before that may still have none.
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_enrollment_no_key ON users (UPPER(enrollment_no));`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR;`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS users_enrollment_no_key ON users (UPPER(enrollment_no));`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS whatsapp VARCHAR;`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;`);
   // Existing accounts remain usable; only newly registered accounts require verification.
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_hash VARCHAR;`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP;`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token_hash VARCHAR;`);
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires_at TIMESTAMP;`);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS listings (
       id SERIAL PRIMARY KEY,
       title VARCHAR NOT NULL,
@@ -50,11 +50,11 @@ async function initDb() {
   `);
 
   // Safe, idempotent migration for databases created before availability tracking.
-  await pool.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS availability_status VARCHAR;`);
-  await pool.query(`UPDATE listings SET availability_status = 'available' WHERE availability_status IS NULL OR availability_status NOT IN ('available', 'sold', 'rented', 'borrowed', 'completed');`);
-  await pool.query(`ALTER TABLE listings ALTER COLUMN availability_status SET DEFAULT 'available';`);
-  await pool.query(`ALTER TABLE listings ALTER COLUMN availability_status SET NOT NULL;`);
-  await pool.query(`
+  await db.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS availability_status VARCHAR;`);
+  await db.query(`UPDATE listings SET availability_status = 'available' WHERE availability_status IS NULL OR availability_status NOT IN ('available', 'sold', 'rented', 'borrowed', 'completed');`);
+  await db.query(`ALTER TABLE listings ALTER COLUMN availability_status SET DEFAULT 'available';`);
+  await db.query(`ALTER TABLE listings ALTER COLUMN availability_status SET NOT NULL;`);
+  await db.query(`
     DO $$
     BEGIN
       IF NOT EXISTS (
@@ -68,7 +68,7 @@ async function initDb() {
     END $$;
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
       content TEXT NOT NULL,
@@ -82,12 +82,12 @@ async function initDb() {
 
   // Databases created before read-tracking: existing messages count as already read,
   // only messages created from now on start as unread.
-  await pool.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT TRUE;`);
-  await pool.query(`ALTER TABLE messages ALTER COLUMN is_read SET DEFAULT FALSE;`);
+  await db.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT TRUE;`);
+  await db.query(`ALTER TABLE messages ALTER COLUMN is_read SET DEFAULT FALSE;`);
 
   // Databases created before receiver_id was a real reference. NOT VALID enforces the
   // constraint for new rows without failing on any old orphaned rows.
-  await pool.query(`
+  await db.query(`
     DO $$
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'messages_receiver_id_fkey') THEN
@@ -98,7 +98,7 @@ async function initDb() {
     END $$;
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS chat_history (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id),

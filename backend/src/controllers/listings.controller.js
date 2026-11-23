@@ -1,6 +1,7 @@
 const listingModel = require('../models/listing.model');
 const cloudinaryService = require('../services/cloudinary.service');
 const HttpError = require('../utils/HttpError');
+const { getListingSortSql } = require('../utils/listingSort');
 const {
   isMissing, parseText, parseOptionalText, parseNumber, parseId,
   parseSemester, parseCondition, parseListingType, parseCategory,
@@ -33,8 +34,8 @@ function toListingDict(listing, includeContact) {
     created_at: listing.created_at,
   };
   if (includeContact) {
-    dict.seller_email = listing.seller_email || '';
-    dict.seller_whatsapp = listing.seller_whatsapp || null;
+    dict.seller_email = listing.seller_share_email ? listing.seller_email : '';
+    dict.seller_whatsapp = listing.seller_share_whatsapp ? (listing.seller_whatsapp || null) : null;
   }
   return dict;
 }
@@ -62,7 +63,7 @@ async function createListing(req, res) {
     try {
       imageUrl = await cloudinaryService.uploadImage(req.file.buffer);
     } catch (err) {
-      console.error(`Image upload failed: ${err.message || err}`);
+      console.error('[cloudinary] Image upload failed:', err.code || err.name || 'upload error');
       throw new HttpError(502, 'Image upload failed. Please try again or post without a photo.');
     }
   }
@@ -85,8 +86,7 @@ async function createListing(req, res) {
 
 async function getListings(req, res) {
   const q = req.query;
-
-  const listings = await listingModel.findMany({
+  const filters = {
     category: isMissing(q.category) ? undefined : parseText(q.category, 'Category', { max: 100 }),
     listingType: isMissing(q.listing_type) ? undefined : parseText(q.listing_type, 'Listing type', { max: 20 }),
     departmentTag: isMissing(q.department_tag) ? undefined : parseText(q.department_tag, 'Department tag', { max: 150 }),
@@ -95,11 +95,17 @@ async function getListings(req, res) {
     maxPrice: isMissing(q.max_price) ? undefined : parseNumber(q.max_price, 'Maximum price', { min: 0 }),
     minCondition: isMissing(q.min_condition) ? undefined : parseCondition(q.min_condition),
     search: isMissing(q.search) ? undefined : parseText(q.search, 'Search', { max: 100 }),
-    skip: isMissing(q.skip) ? 0 : parseNumber(q.skip, 'Skip', { integer: true, min: 0 }),
+    skip: isMissing(q.skip) ? 0 : parseNumber(q.skip, 'Skip', { integer: true, min: 0, max: 1000000 }),
     limit: isMissing(q.limit) ? DEFAULT_LIMIT : parseNumber(q.limit, 'Limit', { integer: true, min: 1, max: MAX_LIMIT }),
-  });
-
-  return res.json(toListingDicts(listings, Boolean(req.user)));
+    sort: isMissing(q.sort) ? 'newest' : parseText(q.sort, 'Sort', { max: 20 }),
+  };
+  if (!getListingSortSql(filters.sort)) {
+    throw new HttpError(400, 'Unsupported sort option');
+  }
+  const { rows, total } = await listingModel.findMany(filters);
+  res.set('X-Total-Count', String(total));
+  res.set('Access-Control-Expose-Headers', 'X-Total-Count');
+  return res.json(toListingDicts(rows, Boolean(req.user)));
 }
 
 async function getMyListings(req, res) {
@@ -190,4 +196,5 @@ module.exports = {
   updateListing,
   updateListingAvailability,
   deleteListing,
+  toListingDict,
 };

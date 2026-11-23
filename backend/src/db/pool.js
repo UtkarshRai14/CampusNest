@@ -7,10 +7,11 @@ types.setTypeParser(1114, (val) => new Date(`${val.replace(' ', 'T')}Z`).toISOSt
 
 const pool = new Pool({
   connectionString: env.databaseUrl,
+  connectionTimeoutMillis: 5000,
 });
 
 pool.on('error', (err) => {
-  console.error('[db] Unexpected error on idle client', err);
+  console.error('[db] Unexpected error on idle client', { name: err.name || 'Error', code: err.code || undefined });
 });
 
 module.exports = pool;

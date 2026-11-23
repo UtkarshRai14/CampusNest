@@ -1,5 +1,6 @@
 const pool = require('../db/pool');
 const { withTransaction } = require('../db/transaction');
+const { getListingSortSql } = require('../utils/listingSort');
 
 const SELECT_WITH_SELLER = `
   SELECT
@@ -9,7 +10,9 @@ const SELECT_WITH_SELLER = `
     u.department AS seller_department,
     u.semester AS seller_semester,
     u.email AS seller_email,
-    u.whatsapp AS seller_whatsapp
+    u.whatsapp AS seller_whatsapp,
+    u.share_email AS seller_share_email,
+    u.share_whatsapp AS seller_share_whatsapp
   FROM listings l
   LEFT JOIN users u ON u.id = l.seller_id
 `;
@@ -52,8 +55,11 @@ async function findMany(filters) {
   const {
     category, listingType, departmentTag, semesterTag,
     minPrice, maxPrice, minCondition, search,
-    skip = 0, limit = 50,
+    skip = 0, limit = 50, sort = 'newest',
   } = filters;
+
+  const sortSql = getListingSortSql(sort);
+  if (!sortSql) throw new Error('Unsupported listing sort option');
 
   const clauses = ["l.is_active = TRUE", "l.availability_status = 'available'"]
   const values = [];
@@ -72,6 +78,12 @@ async function findMany(filters) {
     i += 1;
   }
 
+  const countValues = [...values];
+  const { rows: countRows } = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM listings l WHERE ${clauses.join(' AND ')}`,
+    countValues
+  );
+
   values.push(limit);
   const limitIdx = i++;
   values.push(skip);
@@ -80,11 +92,11 @@ async function findMany(filters) {
   const { rows } = await pool.query(
     `${SELECT_WITH_SELLER}
      WHERE ${clauses.join(' AND ')}
-     ORDER BY l.created_at DESC
+     ORDER BY ${sortSql}
      LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
     values
   );
-  return rows;
+  return { rows, total: countRows[0].total };
 }
 
 async function updateFields(id, { title, description, price, condition }) {
@@ -112,12 +124,14 @@ async function softDelete(id) {
 // Returns the sender and receiver of each deleted message.
 async function hardDelete(id) {
   return withTransaction(async (client) => {
+    const { rows: listingRows } = await client.query('SELECT image_url FROM listings WHERE id = $1 FOR UPDATE', [id]);
+    if (!listingRows[0]) return null;
     const { rows } = await client.query(
       'DELETE FROM messages WHERE listing_id = $1 RETURNING sender_id, receiver_id',
       [id]
     );
     await client.query('DELETE FROM listings WHERE id = $1', [id]);
-    return rows;
+    return { messages: rows, imageUrl: listingRows[0].image_url };
   });
 }
 
@@ -157,18 +171,60 @@ async function updateAvailabilityStatus(id, availabilityStatus) {
   return findByIdAny(id);
 }
 
-async function findAllActive() {
+async function findForAria(limit = 20) {
   const { rows } = await pool.query(
-    `${SELECT_WITH_SELLER} WHERE l.is_active = TRUE AND l.availability_status = 'available' ORDER BY l.created_at DESC`
+    `SELECT id, title, category, listing_type, price, condition, created_at
+     FROM listings
+     WHERE is_active = TRUE AND availability_status = 'available'
+     ORDER BY created_at DESC, id DESC LIMIT $1`,
+    [limit]
   );
   return rows;
 }
 
-async function findAllActiveForAdmin() {
+async function findAssistantMatches({ category, maxPrice, minCondition, useCategory = true, useCondition = true, limit = 5 }) {
+  const clauses = ["is_active = TRUE", "availability_status = 'available'"];
+  const values = [];
+  if (useCategory && category && category !== 'Other') {
+    values.push(category);
+    clauses.push(`category = $${values.length}`);
+  }
+  if (maxPrice !== null && maxPrice !== undefined) {
+    values.push(maxPrice);
+    clauses.push(`price <= $${values.length}`);
+  }
+  if (useCondition && minCondition > 1) {
+    values.push(minCondition);
+    clauses.push(`condition >= $${values.length}`);
+  }
+  values.push(limit);
+  const order = useCondition ? 'condition DESC, created_at DESC, id DESC' : 'created_at DESC, id DESC';
   const { rows } = await pool.query(
-    `${SELECT_WITH_SELLER} WHERE l.is_active = TRUE ORDER BY l.created_at DESC`
+    `SELECT id, title, price, category, condition, listing_type, image_url, created_at
+     FROM listings WHERE ${clauses.join(' AND ')}
+     ORDER BY ${order} LIMIT $${values.length}`,
+    values
   );
   return rows;
+}
+
+async function findAllActiveForAdmin({ offset = 0, limit = 50, search = '' } = {}) {
+  const clauses = ['l.is_active = TRUE'];
+  const values = [];
+  if (search) {
+    clauses.push('l.title ILIKE $1');
+    values.push(`%${search}%`);
+  }
+  const where = clauses.join(' AND ');
+  const { rows: countRows } = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM listings l WHERE ${where}`,
+    values
+  );
+  const { rows } = await pool.query(
+    `${SELECT_WITH_SELLER} WHERE ${where} ORDER BY l.created_at DESC, l.id DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+    [...values, limit, offset]
+  );
+  return { rows, total: countRows[0].total };
 }
 
 module.exports = {
@@ -185,6 +241,7 @@ module.exports = {
   countDistinctCategories,
   averagePrice,
   countByCategory,
-  findAllActive,
+  findForAria,
+  findAssistantMatches,
   findAllActiveForAdmin,
 };

@@ -139,34 +139,10 @@ async function runSearchAgent(userMessage) {
   const maxPrice = extractMaxPrice(userMessage);
   const minCondition = extractMinCondition(userMessage);
 
-  const allActive = await listingModel.findAllActive();
-
-  function applyFilters(listings, { useCategory, useCondition }) {
-    return listings.filter((l) => {
-      if (useCategory && category !== UNKNOWN_CATEGORY && l.category !== category) return false;
-      if (maxPrice && l.price > maxPrice) return false;
-      if (useCondition && minCondition > 1 && l.condition < minCondition) return false;
-      return true;
-    });
-  }
-
-  function sortByConditionThenRecency(a, b) {
-    if (b.condition !== a.condition) return b.condition - a.condition;
-    return new Date(b.created_at) - new Date(a.created_at);
-  }
-
-  function sortByRecency(a, b) {
-    return new Date(b.created_at) - new Date(a.created_at);
-  }
-
-  let results = applyFilters(allActive, { useCategory: true, useCondition: true })
-    .sort(sortByConditionThenRecency)
-    .slice(0, 5);
+  let results = await listingModel.findAssistantMatches({ category, maxPrice, minCondition });
 
   if (results.length === 0 && category !== UNKNOWN_CATEGORY) {
-    results = applyFilters(allActive, { useCategory: false, useCondition: false })
-      .sort(sortByRecency)
-      .slice(0, 5);
+    results = await listingModel.findAssistantMatches({ category, maxPrice, minCondition, useCategory: false, useCondition: false });
   }
 
   const stepsTaken = [

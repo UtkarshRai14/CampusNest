@@ -1,12 +1,13 @@
 const express = require('express');
 const listingsController = require('../controllers/listings.controller');
 const { authenticate, optionalAuthenticate } = require('../middleware/auth.middleware');
-const upload = require('../middleware/upload.middleware');
+const { upload, validateImage } = require('../middleware/upload.middleware');
 const asyncHandler = require('../utils/asyncHandler');
+const limits = require('../middleware/rateLimit.middleware');
 
 const router = express.Router();
 
-router.post('/', authenticate, upload.single('image'), asyncHandler(listingsController.createListing));
+router.post('/', authenticate, limits.listingIp, limits.listingUser, upload.single('image'), validateImage, asyncHandler(listingsController.createListing));
 router.get('/', optionalAuthenticate, asyncHandler(listingsController.getListings));
 
 router.get('/my-listings', authenticate, asyncHandler(listingsController.getMyListings));
