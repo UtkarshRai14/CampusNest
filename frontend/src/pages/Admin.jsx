@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
@@ -21,6 +21,13 @@ export default function Admin() {
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [userPage, setUserPage] = useState(1)
+  const [listingPage, setListingPage] = useState(1)
+  const [userTotal, setUserTotal] = useState(0)
+  const [listingTotal, setListingTotal] = useState(0)
+  const requestSequence = useRef(0)
+  const pageSize = 50
 
   // This check only decides what to show. The API itself rejects non-admins with a 403.
   useEffect(() => {
@@ -32,31 +39,45 @@ export default function Admin() {
       return
     }
     fetchAll()
-  }, [isAuthenticated, user?.is_admin])
+  }, [isAuthenticated, user?.is_admin, tab, userPage, listingPage, debouncedSearch])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const fetchAll = async (silent = false) => {
+    const sequence = ++requestSequence.current
     if (!silent) setLoading(true)
     try {
+      const userParams = { page: userPage, limit: pageSize }
+      const listingParams = { page: listingPage, limit: pageSize }
+      if (tab === 'users' && debouncedSearch) userParams.search = debouncedSearch
+      if (tab === 'listings' && debouncedSearch) listingParams.search = debouncedSearch
       const [s, u, l] = await Promise.all([
         API.get('/admin/stats'),
-        API.get('/admin/users'),
-        API.get('/admin/listings'),
+        API.get('/admin/users', { params: userParams }),
+        API.get('/admin/listings', { params: listingParams }),
       ])
+      if (sequence !== requestSequence.current) return
       setStats(s.data)
       setUsers(u.data)
       setListings(l.data)
+      setUserTotal(Number(u.headers['x-total-count'] || 0))
+      setListingTotal(Number(l.headers['x-total-count'] || 0))
     } catch (err) {
       if (err.response?.status === 403) { toast.error('Admin access only!'); navigate('/') }
       else toast.error('Failed to load admin data')
     }
-    finally { setLoading(false) }
+    finally { if (sequence === requestSequence.current) setLoading(false) }
   }
 
   const deleteUser = async (id) => {
     if (!window.confirm('Delete this user and all their data?')) return
     try {
-      await API.delete(`/admin/users/${id}`)
-      toast.success('User deleted')
+      const res = await API.delete(`/admin/users/${id}`)
+      if (res.data?.image_cleanup === 'pending') toast.error(res.data.message)
+      else toast.success('User deleted')
       fetchAll(true)
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to delete user') }
   }
@@ -64,21 +85,22 @@ export default function Admin() {
   const deleteListing = async (id) => {
     if (!window.confirm('Delete this listing?')) return
     try {
-      await API.delete(`/admin/listings/${id}`)
-      toast.success('Listing deleted')
+      const res = await API.delete(`/admin/listings/${id}`)
+      if (res.data?.image_cleanup === 'pending') toast.error(res.data.message)
+      else toast.success('Listing deleted')
       fetchAll(true)
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to delete listing') }
   }
 
-  const filteredUsers = users.filter(u =>
-    u.name?.toLowerCase().includes(search.toLowerCase()) ||
-    u.email?.toLowerCase().includes(search.toLowerCase()) ||
-    u.enrollment_no?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredUsers = users
+  const filteredListings = listings
 
-  const filteredListings = listings.filter(l =>
-    l.title?.toLowerCase().includes(search.toLowerCase())
-  )
+  useEffect(() => {
+    const lastUserPage = Math.max(1, Math.ceil(userTotal / pageSize))
+    if (userPage > lastUserPage) setUserPage(lastUserPage)
+    const lastListingPage = Math.max(1, Math.ceil(listingTotal / pageSize))
+    if (listingPage > lastListingPage) setListingPage(lastListingPage)
+  }, [userTotal, listingTotal, userPage, listingPage])
 
   const thStyle = { padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 700, color: '#7A9BA8', letterSpacing: 0.5, borderBottom: '1px solid #E0F5F0' }
   const tdStyle = { padding: '14px 16px', fontSize: 14, color: '#0D2B35', borderBottom: '1px solid #F0F8F6' }
@@ -123,7 +145,7 @@ export default function Admin() {
 
         <div style={{ display: 'flex', gap: 4, marginBottom: 24, background: '#fff', borderRadius: 12, padding: 6, border: '1px solid #D0F5F0', width: 'fit-content' }}>
           {[['stats', '📊 Overview'], ['users', '👥 Users'], ['listings', '📦 Listings']].map(([key, label]) => (
-            <button key={key} onClick={() => { setTab(key); setSearch('') }} style={{
+            <button key={key} onClick={() => { setTab(key); setSearch(''); setUserPage(1); setListingPage(1) }} style={{
               padding: '8px 22px', borderRadius: 8, border: 'none', cursor: 'pointer',
               background: tab === key ? 'linear-gradient(135deg, #00C9B1, #00A896)' : 'transparent',
               color: tab === key ? '#fff' : '#4A6572',
@@ -134,7 +156,7 @@ export default function Admin() {
 
         {tab !== 'stats' && (
           <input type="text" placeholder={`🔍 Search ${tab}...`}
-            value={search} onChange={e => setSearch(e.target.value)}
+            value={search} onChange={e => { setSearch(e.target.value); setUserPage(1); setListingPage(1) }}
             style={{
               padding: '10px 18px', borderRadius: 10, marginBottom: 20,
               border: '1.5px solid #D0ECE8', outline: 'none',
@@ -195,7 +217,12 @@ export default function Admin() {
                   )}
                 </div>
                 <div style={{ padding: '12px 20px', borderTop: '1px solid #E0F5F0', background: '#F8FFFE', fontSize: 13, color: '#7A9BA8' }}>
-                  Showing {filteredUsers.length} of {users.length} users
+                  Showing {userTotal === 0 ? 0 : (userPage - 1) * pageSize + 1}–{Math.min(userPage * pageSize, userTotal)} of {userTotal} users
+                  <span style={{ float: 'right', display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <button onClick={() => setUserPage(p => Math.max(1, p - 1))} disabled={userPage <= 1}>Previous</button>
+                    Page {userPage} of {Math.max(1, Math.ceil(userTotal / pageSize))}
+                    <button onClick={() => setUserPage(p => p + 1)} disabled={userPage >= Math.ceil(userTotal / pageSize)}>Next</button>
+                  </span>
                 </div>
               </motion.div>
             )}
@@ -247,7 +274,12 @@ export default function Admin() {
                   )}
                 </div>
                 <div style={{ padding: '12px 20px', borderTop: '1px solid #E0F5F0', background: '#F8FFFE', fontSize: 13, color: '#7A9BA8' }}>
-                  Showing {filteredListings.length} of {listings.length} listings
+                  Showing {listingTotal === 0 ? 0 : (listingPage - 1) * pageSize + 1}–{Math.min(listingPage * pageSize, listingTotal)} of {listingTotal} listings
+                  <span style={{ float: 'right', display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <button onClick={() => setListingPage(p => Math.max(1, p - 1))} disabled={listingPage <= 1}>Previous</button>
+                    Page {listingPage} of {Math.max(1, Math.ceil(listingTotal / pageSize))}
+                    <button onClick={() => setListingPage(p => p + 1)} disabled={listingPage >= Math.ceil(listingTotal / pageSize)}>Next</button>
+                  </span>
                 </div>
               </motion.div>
             )}

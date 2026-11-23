@@ -13,6 +13,8 @@ export default function Profile() {
   const [loadError, setLoadError] = useState(false)
   const [activeTab, setActiveTab] = useState('listings')
   const [whatsapp, setWhatsapp] = useState(user?.whatsapp || '')
+  const [shareEmail, setShareEmail] = useState(Boolean(user?.share_email))
+  const [shareWhatsapp, setShareWhatsapp] = useState(Boolean(user?.share_whatsapp))
   const [savingWA, setSavingWA] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editForm, setEditForm] = useState({ title: '', description: '', price: '', condition: 3 })
@@ -39,7 +41,11 @@ export default function Profile() {
   }, [])
 
   // The saved number can arrive after the page opens (the app refreshes the user on load).
-  useEffect(() => { setWhatsapp(user?.whatsapp || '') }, [user?.whatsapp])
+  useEffect(() => {
+    setWhatsapp(user?.whatsapp || '')
+    setShareEmail(Boolean(user?.share_email))
+    setShareWhatsapp(Boolean(user?.share_whatsapp))
+  }, [user?.whatsapp, user?.share_email, user?.share_whatsapp])
 
   const deleteListing = async (id) => {
     if (!window.confirm('Delete this listing?')) return
@@ -60,10 +66,14 @@ export default function Profile() {
 
   const saveWhatsApp = async () => {
     const value = whatsapp.trim()
-    if (!value && !user?.whatsapp) { toast.error('Enter your WhatsApp number'); return }
+    if (shareWhatsapp && !value) { toast.error('Add a WhatsApp number before sharing it'); return }
     setSavingWA(true)
     try {
-      const res = await API.put('/users/me', { whatsapp: value })
+      const res = await API.put('/users/me', {
+        whatsapp: value,
+        share_email: shareEmail,
+        share_whatsapp: shareWhatsapp,
+      })
       updateUser(res.data.user)
       toast.success(value ? 'WhatsApp saved!' : 'WhatsApp removed')
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to save') }
@@ -148,7 +158,7 @@ export default function Profile() {
           </div>
           <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid #E0F5F0' }}>
             <p style={{ fontSize: 14, fontWeight: 700, color: '#0D2B35', marginBottom: 4 }}>📱 Your WhatsApp number</p>
-            <p style={{ fontSize: 12, color: '#7A9BA8', marginBottom: 12 }}>Logged-in users can see it on your listings and in your automatic first reply. You can also share it from a chat. Clear it and save to remove it.</p>
+              <p style={{ fontSize: 12, color: '#7A9BA8', marginBottom: 12 }}>Contact details stay private unless you choose to share them. Clear the number and save to remove it.</p>
             <div style={{ display: 'flex', gap: 10, maxWidth: 400 }}>
               <input type="tel" placeholder="e.g. 9876543210" value={whatsapp}
                 onChange={e => setWhatsapp(e.target.value)}
@@ -160,6 +170,17 @@ export default function Profile() {
                 style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#25D366', color: '#fff', fontWeight: 700, cursor: savingWA ? 'not-allowed' : 'pointer', fontSize: 14 }}>
                 {savingWA ? '...' : 'Save 📱'}
               </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#4A6572', fontSize: 13 }}>
+                <input type="checkbox" checked={shareEmail} onChange={e => setShareEmail(e.target.checked)} />
+                Share my email on my listings and in first replies
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 9, color: '#4A6572', fontSize: 13 }}>
+                <input type="checkbox" checked={shareWhatsapp} onChange={e => setShareWhatsapp(e.target.checked)} />
+                Share my WhatsApp on my listings and in first replies
+              </label>
+              <p style={{ fontSize: 11, color: '#7A9BA8' }}>Save to apply contact preferences to existing listings and conversations.</p>
             </div>
           </div>
         </motion.div>

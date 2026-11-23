@@ -198,7 +198,11 @@ export default function Listings() {
   const [searchInput, setSearchInput] = useState('')
   const [viewMode, setViewMode] = useState('grid')
   const [sortBy, setSortBy] = useState('newest')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const searchTimer = useRef(null)
+  const lastFilterKey = useRef(null)
+  const pageSize = 24
 
   const handleSearchInput = (val) => {
     setSearchInput(val)
@@ -206,7 +210,14 @@ export default function Listings() {
     searchTimer.current = setTimeout(() => setSearch(val), 400)
   }
 
+  useEffect(() => () => clearTimeout(searchTimer.current), [])
+
   useEffect(() => {
+    const filterKey = JSON.stringify([activeCategory, activeType, minPrice, maxPrice, minCondition, search, sortBy])
+    if (lastFilterKey.current !== filterKey) {
+      lastFilterKey.current = filterKey
+      if (page !== 1) { setPage(1); return }
+    }
     let ignore = false
     setLoading(true)
     setError(false)
@@ -217,22 +228,22 @@ export default function Listings() {
     if (maxPrice) params.max_price = maxPrice
     if (minCondition) params.min_condition = minCondition
     if (search) params.search = search
+    params.sort = sortBy
+    params.limit = pageSize
+    params.skip = (page - 1) * pageSize
 
     API.get('/listings/', { params })
       .then(r => {
         if (ignore) return
-        let data = Array.isArray(r.data) ? r.data : []
-        if (sortBy === 'price_low') data = [...data].sort((a, b) => a.price - b.price)
-        if (sortBy === 'price_high') data = [...data].sort((a, b) => b.price - a.price)
-        if (sortBy === 'condition') data = [...data].sort((a, b) => b.condition - a.condition)
-        setListings(data)
+        setListings(Array.isArray(r.data) ? r.data : [])
+        setTotal(Number(r.headers['x-total-count'] || 0))
       })
       .catch(() => { if (!ignore) { setListings([]); setError(true) } })
       .finally(() => { if (!ignore) setLoading(false) })
 
     // A newer request supersedes this one, so a slow older response cannot overwrite it.
     return () => { ignore = true }
-  }, [activeCategory, activeType, minPrice, maxPrice, minCondition, search, sortBy, reloadKey])
+  }, [activeCategory, activeType, minPrice, maxPrice, minCondition, search, sortBy, page, reloadKey])
 
   const clearFilters = () => {
     setActiveCategory('All')
@@ -313,7 +324,7 @@ export default function Listings() {
         </div>
 
         <div style={{ color: '#7A9BA8', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}>
-          {loading ? '...' : error ? '—' : `${listings.length} listing${listings.length !== 1 ? 's' : ''}`}
+          {loading ? '...' : error ? '—' : `${total} listing${total !== 1 ? 's' : ''}`}
         </div>
       </div>
 
@@ -582,8 +593,15 @@ export default function Listings() {
                 flexWrap: 'wrap', gap: 12,
               }}>
                 <span style={{ color: '#7A9BA8', fontSize: 13 }}>
-                  Showing <strong style={{ color: '#0D2B35' }}>{listings.length}</strong> listings
+                  Showing <strong style={{ color: '#0D2B35' }}>{total === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)}</strong> of <strong style={{ color: '#0D2B35' }}>{total}</strong> listings
                 </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1 || loading}
+                    style={{ padding: '8px 12px', border: '1px solid #D0ECE8', borderRadius: 8, background: page <= 1 ? '#F8FFFE' : '#fff', color: '#4A6572', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}>Previous</button>
+                  <span style={{ color: '#7A9BA8', fontSize: 12 }}>Page {page} of {Math.max(1, Math.ceil(total / pageSize))}</span>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page >= Math.ceil(total / pageSize) || loading}
+                    style={{ padding: '8px 12px', border: '1px solid #D0ECE8', borderRadius: 8, background: page >= Math.ceil(total / pageSize) ? '#F8FFFE' : '#fff', color: '#4A6572', cursor: page >= Math.ceil(total / pageSize) ? 'not-allowed' : 'pointer' }}>Next</button>
+                </div>
                 <Link to="/post" style={{
                   padding: '9px 20px', borderRadius: 10, textDecoration: 'none',
                   background: 'linear-gradient(135deg, #00C9B1, #00A896)',

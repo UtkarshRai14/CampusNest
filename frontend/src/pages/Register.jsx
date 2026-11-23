@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import API from '../api/axios'
+import useIsMobile from '../hooks/useIsMobile'
 
 const COLLEGE_EMAIL_DOMAIN = 'iiitsonepat.ac.in'
 
@@ -13,7 +14,7 @@ function isCollegeEmail(email) {
 }
 
 export default function Register() {
-  const isMobile = window.innerWidth < 768
+  const isMobile = useIsMobile()
   const [step, setStep] = useState(1)
   const [schools, setSchools] = useState([])
   const [departments, setDepartments] = useState([])
@@ -153,7 +154,7 @@ export default function Register() {
             <div>
               <label style={labelStyle}>Password *</label>
               <div style={{ position: 'relative' }}>
-                <input style={{ ...inputStyle, paddingRight: 44 }} type={showPassword ? "text" : "password"} placeholder="Minimum 6 characters"
+                <input style={{ ...inputStyle, paddingRight: 44 }} type={showPassword ? "text" : "password"} placeholder="Minimum 8 characters; maximum 72 UTF-8 bytes"
                   value={form.password} onChange={e => update('password', e.target.value)}
                   onFocus={e => e.target.style.borderColor = '#00C9B1'}
                   onBlur={e => e.target.style.borderColor = '#D0ECE8'} />
@@ -190,7 +191,8 @@ export default function Register() {
                 if (!form.name.trim()) { toast.error('Enter your name'); return }
                 if (!form.email.trim()) { toast.error('Enter your college email'); return }
                 if (!isCollegeEmail(form.email)) { toast.error('Use your college email'); return }
-                if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); return }
+                if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); return }
+                if (new TextEncoder().encode(form.password).length > 72) { toast.error('Password must be at most 72 UTF-8 bytes'); return }
                 if (form.password !== form.confirm) { toast.error('Passwords do not match'); return }
                 setStep(2)
               }}

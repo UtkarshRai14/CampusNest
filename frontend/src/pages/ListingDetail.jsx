@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
 import { CONDITION_LABELS } from '../constants'
+import useIsMobile from '../hooks/useIsMobile'
 
 const typeColors = {
   sell:   { bg: '#E8FBF8', color: '#00A896' },
@@ -44,6 +45,7 @@ export default function ListingDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { isAuthenticated, user } = useAuthStore()
+  const isMobile = useIsMobile()
   const [listing, setListing] = useState(null)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -53,15 +55,22 @@ export default function ListingDetail() {
   const [activeQuick, setActiveQuick] = useState(null)
 
   useEffect(() => {
-    // The page stays mounted when another listing is opened (e.g. from ARIA), so reset per listing.
+    const controller = new AbortController()
+    setLoading(true)
+    setListing(null)
     setImgError(false)
-    API.get(`/listings/${id}`)
+    setShowContact(false)
+    setMessage('')
+    setActiveQuick(null)
+    API.get(`/listings/${id}`, { signal: controller.signal })
       .then(r => setListing(r.data))
       .catch(err => {
+        if (controller.signal.aborted) return
         toast.error(err.response?.status === 404 ? 'Listing not found' : 'Unable to load listing. Please try again.')
         navigate('/listings')
       })
-      .finally(() => setLoading(false))
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    return () => controller.abort()
   }, [id, isAuthenticated])
 
   const handleQuickMessage = (template) => {
@@ -111,7 +120,7 @@ export default function ListingDetail() {
   const templates = quickMessages[listing.listing_type] || quickMessages.sell
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F5FFFE', padding: window.innerWidth < 768 ? '16px' : '32px 24px' }}>
+    <div style={{ minHeight: '100vh', background: '#F5FFFE', padding: isMobile ? '16px' : '32px 24px' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 28, fontSize: 14, color: '#7A9BA8' }}>
@@ -120,7 +129,7 @@ export default function ListingDetail() {
           <span style={{ color: '#0D2B35', fontWeight: 600 }}>{listing.title?.length > 30 ? `${listing.title.substring(0, 30)}...` : listing.title}</span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth < 768 ? '1fr' : '1fr 400px', gap: 28, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 400px', gap: 28, alignItems: 'start' }}>
 
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
 

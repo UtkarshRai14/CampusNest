@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast'
 import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Login from './pages/Login'
+import PasswordReset from './pages/PasswordReset'
 import Register from './pages/Register'
 import VerifyEmail from './pages/VerifyEmail'
 import Listings from './pages/Listings'
@@ -13,6 +14,7 @@ import Messages from './pages/Messages'
 import Analytics from './pages/Analytics'
 import Profile from './pages/Profile'
 import Admin from './pages/Admin'
+import NotFound from './pages/NotFound'
 import ARIAChat from './components/ARIAChat'
 import ServerStatusBanner from './components/ServerStatusBanner'
 import API from './api/axios'
@@ -53,6 +55,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<PasswordReset />} />
+        <Route path="/reset-password" element={<PasswordReset />} />
         <Route path="/register" element={<Register />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/listings" element={<Listings />} />
@@ -62,7 +66,7 @@ export default function App() {
         <Route path="/analytics" element={isAuthenticated && user?.is_admin ? <Analytics /> : <Navigate to="/" replace />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/admin" element={<Admin />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   )

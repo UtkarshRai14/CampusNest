@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
@@ -17,6 +17,7 @@ export default function PostListing() {
   const [loading, setLoading] = useState(false)
   const [image, setImage] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
+  const imagePreviewRef = useRef(null)
   const [form, setForm] = useState({
     title: '', description: '', category: '', listing_type: 'sell',
     price: '', condition: 3,
@@ -24,14 +25,22 @@ export default function PostListing() {
 
   useEffect(() => { if (!isAuthenticated) { toast.error('Please login first'); navigate('/login') } }, [])
 
+  useEffect(() => () => {
+    if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current)
+  }, [])
+
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleImage = (e) => {
     const file = e.target.files[0]
     if (!file) return
+    e.target.value = ''
     if (file.size > MAX_IMAGE_MB * 1024 * 1024) { toast.error(`Image must be under ${MAX_IMAGE_MB}MB`); return }
+    if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current)
+    const previewUrl = URL.createObjectURL(file)
+    imagePreviewRef.current = previewUrl
     setImage(file)
-    setImagePreview(URL.createObjectURL(file))
+    setImagePreview(previewUrl)
   }
 
   const hasValidPrice = Number(form.price) > 0

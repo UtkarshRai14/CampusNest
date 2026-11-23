@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
+import useIsMobile from '../hooks/useIsMobile'
+import toast from 'react-hot-toast'
 
 const suggestions = [
   'What books do I need for IT Sem 3?',
@@ -18,22 +20,17 @@ const agentSuggestions = [
 export default function ARIAChat() {
   const [open, setOpen] = useState(false)
   const [agentMode, setAgentMode] = useState(false)
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const isMobile = useIsMobile()
   const [messages, setMessages] = useState([
     { role: 'aria', text: "Hi! I'm ARIA 🤖 — the CampusNest assistant, powered by Gemini. Ask me about current listings or how selling, renting and borrowing work." }
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [postingIndex, setPostingIndex] = useState(null)
+  const [clearingHistory, setClearingHistory] = useState(false)
   const [postedIndexes, setPostedIndexes] = useState([])
   const bottomRef = useRef(null)
   const { isAuthenticated } = useAuthStore()
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -115,6 +112,21 @@ export default function ARIAChat() {
     }
   }
 
+  const clearHistory = async () => {
+    if (!isAuthenticated || clearingHistory) return
+    if (!window.confirm('Clear your saved ARIA conversation history? This cannot be undone.')) return
+    setClearingHistory(true)
+    try {
+      await API.delete('/chat/history')
+      setMessages([{ role: 'aria', text: "Hi! I'm ARIA 🤖 — the CampusNest assistant, powered by Gemini. Ask me about current listings or how selling, renting and borrowing work." }])
+      toast.success('ARIA history cleared')
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Could not clear ARIA history')
+    } finally {
+      setClearingHistory(false)
+    }
+  }
+
   const cardStyle = {
     marginTop: 8, padding: isMobile ? '10px 12px' : '12px 14px',
     borderRadius: 14, background: '#fff', border: '1.5px solid #B2EFE8',
@@ -186,6 +198,13 @@ export default function ARIAChat() {
               <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: agentMode ? '#00A896' : '#7A9BA8' }}>
                 {agentMode ? '🧾 Listing Assistant ON — drafts listings & searches' : 'Chat Mode'}
               </span>
+              {isAuthenticated && (
+                <button type="button" onClick={clearHistory} disabled={clearingHistory}
+                  aria-label="Clear ARIA conversation history" title="Clear ARIA history"
+                  style={{ border: '1px solid #D0ECE8', borderRadius: 8, padding: '4px 8px', color: '#4A6572', background: '#fff', fontSize: 11, cursor: clearingHistory ? 'wait' : 'pointer' }}>
+                  {clearingHistory ? 'Clearing…' : 'Clear history'}
+                </button>
+              )}
               <button
                 onClick={() => setAgentMode(a => !a)}
                 style={{

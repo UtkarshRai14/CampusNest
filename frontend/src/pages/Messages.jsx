@@ -5,6 +5,7 @@ import API from '../api/axios'
 import socket, { onReconnect } from '../api/socket'
 import useAuthStore from '../store/authStore'
 import toast from 'react-hot-toast'
+import useIsMobile from '../hooks/useIsMobile'
 
 // Canned, generic replies. They never contain personal details such as locations or times.
 const BUYER_REPLIES = [
@@ -67,9 +68,17 @@ function withMessage(list, msg) {
   return tempIndex === -1 ? [...list, msg] : list.map((m, i) => (i === tempIndex ? msg : m))
 }
 
+function mergeMessages(existing, incoming) {
+  return incoming.reduce(withMessage, existing).sort((a, b) => {
+    const timeDifference = new Date(a.created_at) - new Date(b.created_at)
+    return timeDifference || String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+  })
+}
+
 export default function Messages() {
   const { isAuthenticated, user } = useAuthStore()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const [conversations, setConversations] = useState([])
   const [activeConv, setActiveConv] = useState(null)
   const [messages, setMessages] = useState([])
@@ -79,13 +88,19 @@ export default function Messages() {
   const [loadError, setLoadError] = useState(false)
   const [showQuickReplies, setShowQuickReplies] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [hasMoreMessages, setHasMoreMessages] = useState(false)
+  const [olderCursor, setOlderCursor] = useState(null)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const bottomRef = useRef(null)
+  const messagesContainerRef = useRef(null)
+  const shouldScrollToBottomRef = useRef(true)
   // Socket handlers are registered once, so they read the open conversation through a ref.
   const activeConvRef = useRef(null)
   const sendingRef = useRef(false)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (shouldScrollToBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    shouldScrollToBottomRef.current = true
   }, [messages])
 
   const fetchConversations = async (silent = false) => {
@@ -95,15 +110,23 @@ export default function Messages() {
       const data = res.data?.conversations
       setConversations(Array.isArray(data) ? data : [])
       setLoadError(false)
+      return Array.isArray(data) ? data : []
     } catch {
       if (!silent) setLoadError(true)
+      return null
     } finally { if (!silent) setLoading(false) }
   }
 
   // Opening a thread also marks the messages you received in it as read.
-  const fetchThread = async (conv) => {
-    const res = await API.get(`/messages/${conv.listing_id}/${conv.other_user_id}`)
-    return Array.isArray(res.data) ? res.data : []
+  const fetchThread = async (conv, beforeId = null) => {
+    const params = { limit: 50 }
+    if (beforeId) params.before_id = beforeId
+    const res = await API.get(`/messages/${conv.listing_id}/${conv.other_user_id}`, { params })
+    return {
+      messages: Array.isArray(res.data) ? res.data : [],
+      hasMore: res.headers['x-has-more'] === 'true',
+      nextBeforeId: res.headers['x-next-before-id'] || null,
+    }
   }
 
   const isStillActive = (conv) => activeConvRef.current?.conversation_id === conv.conversation_id
@@ -120,7 +143,11 @@ export default function Messages() {
     if (!conv) return
     try {
       const fresh = await fetchThread(conv)
-      if (isStillActive(conv)) setMessages(fresh)
+      if (isStillActive(conv)) {
+        setMessages(prev => mergeMessages(prev, fresh.messages))
+        setHasMoreMessages(fresh.hasMore)
+        setOlderCursor(fresh.nextBeforeId)
+      }
     } catch {}
   }
 
@@ -131,7 +158,7 @@ export default function Messages() {
     const onNewMessage = async (msg) => {
       const conv = activeConvRef.current
       if (conv && isInConversation(msg, conv)) {
-        setMessages(prev => withMessage(prev, msg))
+        setMessages(prev => mergeMessages(prev, [msg]))
         // The conversation is open, so a message from the other person is read on arrival.
         if (msg.sender_id === conv.other_user_id) await markRead(conv)
       }
@@ -139,8 +166,13 @@ export default function Messages() {
     }
     // Messages were deleted, or live updates were missed while offline.
     const reload = async () => {
+      const updated = await fetchConversations(true)
+      const conv = activeConvRef.current
+      if (conv && updated && !updated.some(item => item.conversation_id === conv.conversation_id)) {
+        closeConversation()
+        return
+      }
       await reloadActiveThread()
-      fetchConversations(true)
     }
 
     socket.on('message:new', onNewMessage)
@@ -157,11 +189,16 @@ export default function Messages() {
     selectConversation(conv)
     setShowQuickReplies(false)
     setMessages([])
+    setHasMoreMessages(false)
+    setOlderCursor(null)
+    shouldScrollToBottomRef.current = true
     try {
-      const msgs = await fetchThread(conv)
+      const result = await fetchThread(conv)
       if (!isStillActive(conv)) return
       // Keep anything that arrived live while the thread was loading.
-      setMessages(prev => prev.reduce(withMessage, msgs))
+      setMessages(prev => mergeMessages(result.messages, prev))
+      setHasMoreMessages(result.hasMore)
+      setOlderCursor(result.nextBeforeId)
       fetchConversations(true)
     } catch { toast.error('Failed to load messages') }
   }
@@ -170,6 +207,8 @@ export default function Messages() {
     activeConvRef.current = null
     setActiveConv(null)
     setMessages([])
+    setHasMoreMessages(false)
+    setOlderCursor(null)
   }
 
   const refreshMessages = async () => {
@@ -177,10 +216,38 @@ export default function Messages() {
     setRefreshing(true)
     try {
       const fresh = await fetchThread(activeConv)
-      if (isStillActive(activeConv)) setMessages(fresh)
+      if (isStillActive(activeConv)) {
+        setMessages(prev => mergeMessages(prev, fresh.messages))
+        setHasMoreMessages(fresh.hasMore)
+        setOlderCursor(fresh.nextBeforeId)
+      }
       toast.success('Refreshed!')
     } catch { toast.error('Failed to refresh') }
     finally { setRefreshing(false) }
+  }
+
+  const loadOlderMessages = async () => {
+    const conv = activeConvRef.current
+    if (!conv || !hasMoreMessages || !olderCursor || loadingOlder) return
+    const container = messagesContainerRef.current
+    const previousHeight = container?.scrollHeight || 0
+    const previousTop = container?.scrollTop || 0
+    setLoadingOlder(true)
+    shouldScrollToBottomRef.current = false
+    try {
+      const result = await fetchThread(conv, olderCursor)
+      if (!isStillActive(conv)) { shouldScrollToBottomRef.current = true; return }
+      setMessages(prev => mergeMessages(result.messages, prev))
+      setHasMoreMessages(result.hasMore)
+      setOlderCursor(result.nextBeforeId)
+      requestAnimationFrame(() => {
+        if (container) container.scrollTop = previousTop + (container.scrollHeight - previousHeight)
+      })
+    } catch {
+      shouldScrollToBottomRef.current = true
+      toast.error('Failed to load older messages')
+    }
+    finally { setLoadingOlder(false) }
   }
 
   const shareContact = () => {
@@ -191,10 +258,10 @@ export default function Messages() {
 
   const deleteConversation = async () => {
     if (!activeConv) return
-    if (!window.confirm('Delete this conversation? This cannot be undone.')) return
+    if (!window.confirm('Hide this conversation from your inbox? The other participant will keep their message history.')) return
     try {
       await API.delete(`/messages/${activeConv.listing_id}/${activeConv.other_user_id}`)
-      toast.success('Conversation deleted')
+      toast.success('Conversation hidden')
       closeConversation()
     } catch { toast.error('Failed to delete') }
   }
@@ -225,7 +292,7 @@ export default function Messages() {
         receiver_id: conv.other_user_id,
       })
       // The live event for this message (and any automatic first reply) may have come first.
-      if (isStillActive(conv)) setMessages(prev => withMessage(prev.filter(m => m.id !== tempMsg.id), res.data))
+      if (isStillActive(conv)) setMessages(prev => mergeMessages(prev.filter(m => m.id !== tempMsg.id), [res.data]))
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to send')
       setMessages(prev => prev.filter(m => m.id !== tempMsg.id))
@@ -250,9 +317,9 @@ export default function Messages() {
           💬 Messages
         </motion.h1>
 
-        <div style={{ display: 'grid', gridTemplateColumns: window.innerWidth < 768 ? '1fr' : '300px 1fr', gap: 20, height: window.innerWidth < 768 ? '75vh' : '78vh' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '300px 1fr', gap: 20, height: isMobile ? '75vh' : '78vh' }}>
 
-          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', overflow: 'hidden', display: (window.innerWidth < 768 && activeConv) ? 'none' : 'flex', flexDirection: 'column', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', overflow: 'hidden', display: (isMobile && activeConv) ? 'none' : 'flex', flexDirection: 'column', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
             <div style={{ padding: '18px 20px', borderBottom: '1px solid #E0F5F0', fontWeight: 800, color: '#0D2B35', fontSize: 15, background: 'linear-gradient(135deg, #F8FFFE, #F0FFFE)', display: 'flex', alignItems: 'center', gap: 8 }}>
               Conversations
               {conversations.length > 0 && (
@@ -318,7 +385,7 @@ export default function Messages() {
             </div>
           </div>
 
-          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', display: (window.innerWidth < 768 && !activeConv) ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
+          <div style={{ background: '#fff', borderRadius: 20, border: '1px solid #D0F5F0', display: (isMobile && !activeConv) ? 'none' : 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,201,177,0.07)' }}>
             {!activeConv ? (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: 64, marginBottom: 16, opacity: 0.4 }}>💬</div>
@@ -329,7 +396,7 @@ export default function Messages() {
               <>
 
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid #E0F5F0', display: 'flex', alignItems: 'center', gap: 10, background: 'linear-gradient(135deg, #F8FFFE, #F0FFFE)', flexWrap: 'nowrap' }}>
-                  {window.innerWidth < 768 && (
+                  {isMobile && (
                     <button onClick={closeConversation} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#00A896', flexShrink: 0, padding: 0, lineHeight: 1 }}>←</button>
                   )}
 
@@ -339,7 +406,7 @@ export default function Messages() {
                   <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                     <div style={{ fontWeight: 800, color: '#0D2B35', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeConv.other_user_name}</div>
                     <div style={{ fontSize: 11, color: '#00A896', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📦 {activeConv.listing_title}</div>
-                    {activeConv.other_user_email && window.innerWidth >= 768 && (
+                    {activeConv.other_user_email && !isMobile && (
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
                         <a href={'mailto:' + activeConv.other_user_email} style={{ fontSize: 11, color: '#7A9BA8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
                           ✉️ {activeConv.other_user_email}
@@ -354,29 +421,35 @@ export default function Messages() {
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: window.innerWidth < 768 ? 4 : 8, alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', gap: isMobile ? 4 : 8, alignItems: 'center', flexShrink: 0 }}>
                     <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                       onClick={shareContact}
                       title="Share my contact"
-                      style={{ width: window.innerWidth < 768 ? 30 : 36, height: window.innerWidth < 768 ? 30 : 36, borderRadius: '50%', border: '1.5px solid #B2EFE8', background: '#E8FBF8', cursor: 'pointer', fontSize: window.innerWidth < 768 ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00A896', flexShrink: 0 }}>
+                      style={{ width: isMobile ? 30 : 36, height: isMobile ? 30 : 36, borderRadius: '50%', border: '1.5px solid #B2EFE8', background: '#E8FBF8', cursor: 'pointer', fontSize: isMobile ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00A896', flexShrink: 0 }}>
                       📇
                     </motion.button>
                     <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                       onClick={refreshMessages} disabled={refreshing}
                       title="Refresh messages"
-                      style={{ width: window.innerWidth < 768 ? 30 : 36, height: window.innerWidth < 768 ? 30 : 36, borderRadius: '50%', border: '1.5px solid #D0ECE8', background: '#fff', cursor: 'pointer', fontSize: window.innerWidth < 768 ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00A896', flexShrink: 0 }}>
+                      style={{ width: isMobile ? 30 : 36, height: isMobile ? 30 : 36, borderRadius: '50%', border: '1.5px solid #D0ECE8', background: '#fff', cursor: 'pointer', fontSize: isMobile ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00A896', flexShrink: 0 }}>
                       {refreshing ? '⏳' : '🔄'}
                     </motion.button>
                     <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                       onClick={deleteConversation}
                       title="Delete conversation"
-                      style={{ width: window.innerWidth < 768 ? 30 : 36, height: window.innerWidth < 768 ? 30 : 36, borderRadius: '50%', border: '1.5px solid #FFD0D0', background: '#FFF5F5', cursor: 'pointer', fontSize: window.innerWidth < 768 ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#E05555', flexShrink: 0 }}>
+                      style={{ width: isMobile ? 30 : 36, height: isMobile ? 30 : 36, borderRadius: '50%', border: '1.5px solid #FFD0D0', background: '#FFF5F5', cursor: 'pointer', fontSize: isMobile ? 13 : 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#E05555', flexShrink: 0 }}>
                       🗑️
                     </motion.button>
                   </div>
                 </div>
 
-                <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 12, background: 'linear-gradient(180deg, #FAFFFE 0%, #F5FFFE 100%)' }}>
+                <div ref={messagesContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: 12, background: 'linear-gradient(180deg, #FAFFFE 0%, #F5FFFE 100%)' }}>
+                  {hasMoreMessages && (
+                    <button type="button" onClick={loadOlderMessages} disabled={loadingOlder}
+                      style={{ alignSelf: 'center', border: '1px solid #D0ECE8', borderRadius: 20, padding: '7px 14px', background: '#fff', color: '#00A896', fontSize: 12, fontWeight: 700, cursor: loadingOlder ? 'wait' : 'pointer' }}>
+                      {loadingOlder ? 'Loading older messages…' : 'Load older messages'}
+                    </button>
+                  )}
                   {messages.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '40px 0', color: '#A0BCBB' }}>
                       <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
@@ -396,12 +469,12 @@ export default function Messages() {
                           </div>
                         )}
                         <div style={{
-                          maxWidth: window.innerWidth < 768 ? '78%' : '65%', padding: window.innerWidth < 768 ? '9px 13px' : '11px 16px', borderRadius: 18,
+                          maxWidth: isMobile ? '78%' : '65%', padding: isMobile ? '9px 13px' : '11px 16px', borderRadius: 18,
                           borderBottomRightRadius: isMine ? 4 : 18,
                           borderBottomLeftRadius: isMine ? 18 : 4,
                           background: isMine ? 'linear-gradient(135deg, #00C9B1, #00A896)' : '#fff',
                           color: isMine ? '#fff' : '#0D2B35',
-                          fontSize: window.innerWidth < 768 ? 13 : 14, lineHeight: 1.5,
+                          fontSize: isMobile ? 13 : 14, lineHeight: 1.5,
                           border: isMine ? 'none' : '1px solid #E0F5F0',
                           boxShadow: isMine ? '0 4px 12px rgba(0,201,177,0.3)' : '0 2px 8px rgba(0,0,0,0.05)',
                           whiteSpace: 'pre-line',
@@ -462,23 +535,23 @@ export default function Messages() {
                   )}
                 </AnimatePresence>
 
-                <div style={{ padding: window.innerWidth < 768 ? '10px 10px' : '12px 16px', borderTop: '1px solid #E0F5F0', display: 'flex', gap: window.innerWidth < 768 ? 6 : 10, alignItems: 'center', background: '#fff' }}>
+                <div style={{ padding: isMobile ? '10px 10px' : '12px 16px', borderTop: '1px solid #E0F5F0', display: 'flex', gap: isMobile ? 6 : 10, alignItems: 'center', background: '#fff' }}>
                   <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }}
                     onClick={() => setShowQuickReplies(!showQuickReplies)}
-                    style={{ width: window.innerWidth < 768 ? 36 : 42, height: window.innerWidth < 768 ? 36 : 42, borderRadius: '50%', border: showQuickReplies ? 'none' : '1.5px solid #D0ECE8', background: showQuickReplies ? 'linear-gradient(135deg, #00C9B1, #00A896)' : '#F0FFFE', color: showQuickReplies ? '#fff' : '#00A896', fontSize: 16, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                    style={{ width: isMobile ? 36 : 42, height: isMobile ? 36 : 42, borderRadius: '50%', border: showQuickReplies ? 'none' : '1.5px solid #D0ECE8', background: showQuickReplies ? 'linear-gradient(135deg, #00C9B1, #00A896)' : '#F0FFFE', color: showQuickReplies ? '#fff' : '#00A896', fontSize: 16, cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
                     ⚡
                   </motion.button>
                   <input
                     value={input} onChange={e => setInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                    placeholder={window.innerWidth < 768 ? "Type a message..." : "Type a message or tap ⚡ for quick replies..."}
-                    style={{ flex: 1, minWidth: 0, padding: window.innerWidth < 768 ? '10px 12px' : '12px 16px', borderRadius: 24, border: '1.5px solid #D0ECE8', outline: 'none', fontSize: window.innerWidth < 768 ? 13 : 14, color: '#0D2B35', background: '#F8FFFE', transition: 'all 0.2s' }}
+                    placeholder={isMobile ? "Type a message..." : "Type a message or tap ⚡ for quick replies..."}
+                    style={{ flex: 1, minWidth: 0, padding: isMobile ? '10px 12px' : '12px 16px', borderRadius: 24, border: '1.5px solid #D0ECE8', outline: 'none', fontSize: isMobile ? 13 : 14, color: '#0D2B35', background: '#F8FFFE', transition: 'all 0.2s' }}
                     onFocus={e => e.target.style.borderColor = '#00C9B1'}
                     onBlur={e => e.target.style.borderColor = '#D0ECE8'}
                   />
                   <motion.button whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.95 }}
                     onClick={() => sendMessage()} disabled={sending || !input.trim()}
-                    style={{ width: window.innerWidth < 768 ? 38 : 44, height: window.innerWidth < 768 ? 38 : 44, borderRadius: '50%', border: 'none', background: input.trim() ? 'linear-gradient(135deg, #00C9B1, #00A896)' : '#E0F5F0', color: input.trim() ? '#fff' : '#A0BCBB', fontSize: 18, cursor: input.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 12px rgba(0,201,177,0.4)' : 'none', transition: 'all 0.2s', flexShrink: 0 }}>
+                    style={{ width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: '50%', border: 'none', background: input.trim() ? 'linear-gradient(135deg, #00C9B1, #00A896)' : '#E0F5F0', color: input.trim() ? '#fff' : '#A0BCBB', fontSize: 18, cursor: input.trim() ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 12px rgba(0,201,177,0.4)' : 'none', transition: 'all 0.2s', flexShrink: 0 }}>
                     ↑
                   </motion.button>
                 </div>
@@ -490,3 +563,5 @@ export default function Messages() {
     </div>
   )
 }
+
+export { mergeMessages }

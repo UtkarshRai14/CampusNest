@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { motion, useInView } from 'framer-motion'
 import API from '../api/axios'
 import { CATEGORIES } from '../constants'
+import useIsMobile from '../hooks/useIsMobile'
 
 const categories = [{ name: 'All', icon: '🏬' }, ...CATEGORIES]
 
@@ -35,17 +36,14 @@ function FadeIn({ children, delay = 0, direction = 'up' }) {
 }
 
 export default function Home() {
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  const isMobile = useIsMobile()
   const [listings, setListings] = useState([])
   const [listingsLoading, setListingsLoading] = useState(true)
   const [listingsError, setListingsError] = useState(false)
   const [activeCategory, setActiveCategory] = useState('All')
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const topParallaxRef = useRef(null)
+  const bottomParallaxRef = useRef(null)
+  const parallaxFrameRef = useRef(null)
 
   useEffect(() => {
     API.get('/listings/')
@@ -55,9 +53,27 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    const handleMouse = (e) => setMousePos({ x: e.clientX, y: e.clientY })
+    let pointerX = 0
+    let pointerY = 0
+    const handleMouse = (e) => {
+      pointerX = e.clientX
+      pointerY = e.clientY
+      if (parallaxFrameRef.current !== null) return
+      parallaxFrameRef.current = requestAnimationFrame(() => {
+        if (topParallaxRef.current) {
+          topParallaxRef.current.style.transform = `translate3d(${pointerX * 0.02}px, ${pointerY * 0.02}px, 0)`
+        }
+        if (bottomParallaxRef.current) {
+          bottomParallaxRef.current.style.transform = `translate3d(${pointerX * -0.01}px, ${pointerY * -0.015}px, 0)`
+        }
+        parallaxFrameRef.current = null
+      })
+    }
     window.addEventListener('mousemove', handleMouse)
-    return () => window.removeEventListener('mousemove', handleMouse)
+    return () => {
+      window.removeEventListener('mousemove', handleMouse)
+      if (parallaxFrameRef.current !== null) cancelAnimationFrame(parallaxFrameRef.current)
+    }
   }, [])
 
   const filtered = activeCategory === 'All' ? listings : listings.filter(l => l.category === activeCategory)
@@ -72,15 +88,13 @@ export default function Home() {
         minHeight: isMobile ? 'unset' : '92vh',
       }}>
 
-        <motion.div
-          animate={{ x: mousePos.x * 0.02, y: mousePos.y * 0.02 }}
-          transition={{ type: 'spring', stiffness: 50, damping: 30 }}
-          style={{ position: 'absolute', top: '-10%', right: '-5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,201,177,0.12) 0%, transparent 70%)', pointerEvents: 'none' }}
+        <div
+          ref={topParallaxRef}
+          style={{ position: 'absolute', top: '-10%', right: '-5%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,201,177,0.12) 0%, transparent 70%)', pointerEvents: 'none', willChange: 'transform' }}
         />
-        <motion.div
-          animate={{ x: mousePos.x * -0.01, y: mousePos.y * -0.015 }}
-          transition={{ type: 'spring', stiffness: 30, damping: 20 }}
-          style={{ position: 'absolute', bottom: '-10%', left: '-5%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,168,232,0.1) 0%, transparent 70%)', pointerEvents: 'none' }}
+        <div
+          ref={bottomParallaxRef}
+          style={{ position: 'absolute', bottom: '-10%', left: '-5%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,168,232,0.1) 0%, transparent 70%)', pointerEvents: 'none', willChange: 'transform' }}
         />
 
         <div className='hero-inner' style={{ maxWidth: 1200, margin: '0 auto', width: '100%', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'center', justifyContent: isMobile ? 'center' : 'space-between', gap: isMobile ? 16 : 60, padding: isMobile ? '16px 20px' : '0 48px', textAlign: isMobile ? 'center' : 'left' }}>

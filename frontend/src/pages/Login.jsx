@@ -4,9 +4,10 @@ import { motion } from 'framer-motion'
 import toast from 'react-hot-toast'
 import API from '../api/axios'
 import useAuthStore from '../store/authStore'
+import useIsMobile from '../hooks/useIsMobile'
 
 export default function Login() {
-  const isMobile = window.innerWidth < 768
+  const isMobile = useIsMobile()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -134,6 +135,10 @@ export default function Login() {
                 color: '#7A9BA8', padding: 0, display: 'flex', alignItems: 'center',
               }}>{showPassword ? '🙈' : '👁️'}</button>
             </div>
+          </div>
+
+          <div style={{ textAlign: 'right', marginTop: -10 }}>
+            <Link to="/forgot-password" style={{ color: '#00A896', fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Forgot password?</Link>
           </div>
 
           <motion.button onClick={handleSubmit} disabled={loading}
